@@ -2,5 +2,11 @@
 name = "zung"
 version = "0.1.0"
 edition = "2021"
+authors = ["Ishaan Goel <ishaangoel.99@gmail.com>"]
+description = "A monolith of various rust projects"
+
+[workspace]
+members = ["zung_mini"]
+resolver = "2"
 
 [dependencies]
