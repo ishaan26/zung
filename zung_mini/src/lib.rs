@@ -23,3 +23,11 @@ enum MiniCommands {
         iter_count: u8,
     },
 }
+
+impl MiniArgs {
+    pub fn run(self) {
+        match self.command {
+            MiniCommands::Progbar { iter_count } => progbar::run_progbar(iter_count),
+        }
+    }
+}

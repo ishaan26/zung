@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use mini::{progbar::test_for_clap, MiniArgs};
+use mini::MiniArgs;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None, styles=get_styles())] // Read from `Cargo.toml`
@@ -18,7 +18,7 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.commands {
-        Commands::Mini(_) => test_for_clap(),
+        Commands::Mini(mini_args) => mini_args.run(),
     }
 }
 
@@ -57,4 +57,10 @@ fn get_styles() -> clap::builder::Styles {
         .placeholder(
             anstyle::Style::new().fg_color(Some(anstyle::Color::Ansi(anstyle::AnsiColor::Yellow))),
         )
+}
+
+#[test]
+fn verify_cli() {
+    use clap::CommandFactory;
+    Cli::command().debug_assert()
 }
