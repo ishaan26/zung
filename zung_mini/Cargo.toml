@@ -6,3 +6,4 @@ authors = ["Ishaan Goel <ishaangoel.99@gmail.com>"]
 description = "Mini rust projects that target specific features of rust"
 
 [dependencies]
+clap = { version = "4.5.18", features = ["derive"] }
