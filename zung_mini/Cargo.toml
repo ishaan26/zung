@@ -1,0 +1,8 @@
+[package]
+name = "mini"
+version = "0.1.0"
+edition = "2021"
+authors = ["Ishaan Goel <ishaangoel.99@gmail.com>"]
+description = "Mini rust projects that target specific features of rust"
+
+[dependencies]
