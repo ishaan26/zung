@@ -2,10 +2,10 @@
 //!
 //! Mini rust projects that target specific features of rust
 
-/// Implementation of a progress bar. WIP rn.
 pub mod progbar;
 
 use clap::{Args, Subcommand};
+use progbar::ProgBarExt;
 
 #[derive(Debug, Args)]
 #[command(flatten_help = true, subcommand_required = true)]
@@ -27,7 +27,24 @@ enum MiniCommands {
 impl MiniArgs {
     pub fn run(self) {
         match self.command {
-            MiniCommands::Progbar { iter_count } => progbar::run_progbar(iter_count),
+            MiniCommands::Progbar { iter_count } => {
+                use std::thread::sleep;
+                use std::time::Duration;
+
+                // test run UnBounded
+                for _ in (0..iter_count).progbar() {
+                    sleep(Duration::from_millis(50))
+                }
+
+                // test run Bounded
+                for _ in (0..iter_count)
+                    .progbar()
+                    .bar_style('=')
+                    .with_bounds('(', ')')
+                {
+                    sleep(Duration::from_millis(50))
+                }
+            }
         }
     }
 }
