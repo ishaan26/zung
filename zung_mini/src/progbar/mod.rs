@@ -171,8 +171,8 @@ impl<T> ProgBar<T, UnBounded> {
     ///         # break;
     /// };
     /// ```
-    pub fn with_message(mut self, msg: String) -> Self {
-        self.message = msg;
+    pub fn with_message(mut self, msg: &str) -> Self {
+        self.message = msg.to_string();
         self
     }
 }

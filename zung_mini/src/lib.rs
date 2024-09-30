@@ -58,7 +58,7 @@ impl MiniArgs {
                 match command {
                     ProgBarCommands::UnBounded { message } => {
                         // test run UnBounded
-                        for _ in (0..).progbar().with_message(message) {
+                        for _ in (0..).progbar().with_message(&message) {
                             sleep(Duration::from_millis(50))
                         }
                     }
