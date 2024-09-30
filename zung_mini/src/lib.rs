@@ -7,6 +7,8 @@ pub mod progbar;
 use clap::{Args, Subcommand};
 use progbar::ProgBarExt;
 
+/// An example Clap Argument builder. Install the [`zung`](https://crates.io/crates/zung) crate and
+/// run `zung mini progbar` to see what options are available
 #[derive(Debug, Args)]
 #[command(flatten_help = true, subcommand_required = true)]
 pub struct MiniArgs {
