@@ -85,6 +85,8 @@
 use std::cell::Cell;
 use std::fmt::{Debug, Display};
 use std::io::{self, Write};
+use std::thread;
+use std::time::Duration;
 
 // `BarStyle` is used to define the appearance of the progress bar. It contains
 // a single string field that holds the character(s) used to visually represent the progress.
@@ -112,7 +114,10 @@ impl Default for BarStyle {
 /// Internal state of `ProgBar`. UnBounded means the Iterator is never ending. This is the default
 /// state of the [`ProgBar`]. See [`ProgBar::with_bounds`] method if you want to use a [`Bounded`]
 /// ProgBar.
-pub struct UnBounded;
+pub struct UnBounded {
+    spinner: &'static [char; 10],
+    spinner_step: Cell<usize>,
+}
 
 /// Internal state of `ProgBar`. Bounded means the size of the Iterator is known. This is
 /// constructed with [`ProgBar::with_bounds`] method.
@@ -120,6 +125,7 @@ pub struct Bounded<D: Display> {
     len: usize,
     percentage: Cell<u8>,
     delims: (D, D),
+    bar: BarStyle,
 }
 
 /// Creates a ProgBar type where the `progbar()` method is called over any iterator.
@@ -128,7 +134,6 @@ pub struct ProgBar<T, Bound> {
     iterator: T,
     step: usize,
     bound: Bound,
-    bar: BarStyle,
 }
 
 impl<T> ProgBar<T, UnBounded> {
@@ -137,46 +142,15 @@ impl<T> ProgBar<T, UnBounded> {
         Self {
             iterator,
             step: 0,
-            bound: UnBounded,
-            bar: BarStyle::default(),
+            bound: UnBounded {
+                spinner: &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'],
+                spinner_step: Cell::new(0),
+            },
         }
     }
 }
 
-impl<T, Bound> ProgBar<T, Bound> {
-    /// Sets the style of the progress bar.
-    ///
-    /// This method allows customizing the appearance of the progress bar by specifying
-    /// a type that implements the `BarStyle` trait. The provided `bar` parameter
-    /// should be a reference to an instance of a type that implements both `Display`
-    /// and `Debug` traits.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    ///
-    /// use zung_mini::progbar::ProgBarExt;
-    ///
-    /// (0..100)
-    ///    .progbar()
-    ///    .bar_style(&String::from("="))
-    ///    .with_bounds("|", "|")
-    ///    .for_each(|_| {
-    ///         // Do some calculation
-    ///    });
-    ///    
-    /// // or
-    ///
-    /// for _ in (0..).progbar().bar_style(&"<>") {
-    ///     // Do some calculation
-    /// }
-    ///
-    /// ```
-    pub fn bar_style(mut self, bar: impl Display) -> Self {
-        self.bar = BarStyle::new(bar.to_string());
-        self
-    }
-}
+impl<T, Bound> ProgBar<T, Bound> {}
 
 trait ProgBarDisplay: Sized {
     fn display<T>(&self, progress: &ProgBar<T, Self>);
@@ -184,8 +158,16 @@ trait ProgBarDisplay: Sized {
 
 impl ProgBarDisplay for UnBounded {
     fn display<T>(&self, progress: &ProgBar<T, Self>) {
-        print!("{}", progress.bar);
+        let spinner_step = progress.bound.spinner_step.get();
+        progress.bound.spinner_step.set(spinner_step + 1);
+        if spinner_step > progress.bound.spinner.len() - 2 {
+            progress.bound.spinner_step.set(0);
+        }
+
+        print!("  {}\r", progress.bound.spinner[spinner_step]);
         io::stdout().flush().unwrap();
+
+        thread::sleep(Duration::from_millis(50));
     }
 }
 
@@ -203,7 +185,7 @@ where
             "[{:>3}%] {}{}{}{}\r",
             self.percentage.get(),
             self.delims.0,
-            progbar.bar.to_string().repeat(progbar.step),
+            self.bar.to_string().repeat(progbar.step),
             " ".repeat(self.len - progbar.step),
             self.delims.1
         );
@@ -262,13 +244,13 @@ where
             len: self.iterator.len(),
             percentage: Cell::new(0),
             delims: (bound_start, bound_end),
+            bar: BarStyle::default(),
         };
 
         ProgBar {
             iterator: self.iterator,
             step: self.step,
             bound,
-            bar: self.bar,
         }
     }
 }
@@ -277,6 +259,39 @@ impl<T, D> ProgBar<T, Bounded<D>>
 where
     D: Display,
 {
+    /// Sets the style of the progress bar.
+    ///
+    /// This method allows customizing the appearance of the progress bar by specifying
+    /// a type that implements the `BarStyle` trait. The provided `bar` parameter
+    /// should be a reference to an instance of a type that implements both `Display`
+    /// and `Debug` traits.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    ///
+    /// use zung_mini::progbar::ProgBarExt;
+    ///
+    /// (0..100)
+    ///    .progbar()
+    ///    .bar_style(&String::from("="))
+    ///    .with_bounds("|", "|")
+    ///    .for_each(|_| {
+    ///         // Do some calculation
+    ///    });
+    ///    
+    /// // or
+    ///
+    /// for _ in (0..).progbar().bar_style(&"<>") {
+    ///     // Do some calculation
+    /// }
+    ///
+    /// ```
+    pub fn bar_style(mut self, bar: impl Display) -> ProgBar<T, Bounded<D>> {
+        self.bound.bar = BarStyle::new(bar.to_string());
+        self
+    }
+
     fn calculate_percentage(&self) {
         self.bound
             .percentage
@@ -403,7 +418,7 @@ mod tests {
         assert_eq!(progbar.bound.len, 10);
         assert_eq!(progbar.step, 0);
         assert_eq!(progbar.bound.percentage.get(), 0);
-        assert_eq!(progbar.bar.to_string(), "#");
+        assert_eq!(progbar.bound.bar.to_string(), "#");
     }
 
     #[test]
@@ -444,15 +459,18 @@ mod tests {
 
     #[test]
     fn test_custom_bar_style() {
-        let progbar = (0..10).progbar().bar_style("=").with_bounds('[', ']');
-        assert_eq!(progbar.bar.to_string(), "=");
+        let progbar = (0..10).progbar().with_bounds('[', ']').bar_style("=");
+        assert_eq!(progbar.bound.bar.to_string(), "=");
         assert_eq!(progbar.bound.len, 10);
     }
 
     #[test]
     fn test_unbounded_progbar() {
-        let mut progbar = (0..).progbar().bar_style("-");
-        assert_eq!(progbar.bar.to_string(), "-");
+        let mut progbar = (0..).progbar();
+        assert_eq!(
+            progbar.bound.spinner,
+            &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+        );
         for _ in 0..5 {
             progbar.next();
         }

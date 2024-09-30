@@ -29,10 +29,7 @@ enum MiniCommands {
 #[derive(Clone, Subcommand, Debug)]
 #[command(arg_required_else_help = true)]
 enum ProgBarCommands {
-    UnBounded {
-        #[arg(short, long, default_value_t = String::from("#"))]
-        bar_style: String,
-    },
+    UnBounded,
     Bounded {
         #[arg(long, default_value_t = String::from("["))]
         delim_start: String,
@@ -56,9 +53,9 @@ impl MiniArgs {
                 use std::time::Duration;
 
                 match command {
-                    ProgBarCommands::UnBounded { bar_style } => {
+                    ProgBarCommands::UnBounded => {
                         // test run UnBounded
-                        for _ in (0..).progbar().bar_style(bar_style) {
+                        for _ in (0..).progbar() {
                             sleep(Duration::from_millis(50))
                         }
                     }
@@ -71,8 +68,8 @@ impl MiniArgs {
                         // test run Bounded
                         for _ in (0..iter_count)
                             .progbar()
-                            .bar_style(bar_style)
                             .with_bounds(delim_start, delim_close)
+                            .bar_style(bar_style)
                         {
                             sleep(Duration::from_millis(50))
                         }
