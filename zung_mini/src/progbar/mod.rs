@@ -185,10 +185,10 @@ trait ProgBarDisplay: Sized {
 
 impl ProgBarDisplay for UnBounded {
     fn display<T>(&self, progress: &ProgBar<T, Self>) {
-        let spinner_step = progress.bound.spinner_step.get();
-        progress.bound.spinner_step.set(spinner_step + 1);
-        if spinner_step > progress.bound.spinner.len() - 2 {
-            progress.bound.spinner_step.set(0);
+        let spinner_step = self.spinner_step.get();
+        self.spinner_step.set(spinner_step + 1);
+        if spinner_step > self.spinner.len() - 2 {
+            self.spinner_step.set(0);
         }
 
         print!(
