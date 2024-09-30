@@ -1,6 +1,6 @@
 [package]
 name = "zung"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["Ishaan Goel <ishaangoel.99@gmail.com>"]
 description = "A monolith of rust projects"
@@ -14,6 +14,6 @@ members = ["zung_mini"]
 resolver = "2"
 
 [dependencies]
-zung_mini = "0.1.2"
+zung_mini = { version = "0.2.0", path = "./zung_mini" }
 anstyle = "1.0.8"
 clap = { version = "4.5.18", features = ["derive"] }

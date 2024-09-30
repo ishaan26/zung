@@ -7,6 +7,8 @@ pub mod progbar;
 use clap::{Args, Subcommand};
 use progbar::ProgBarExt;
 
+/// An example Clap Argument builder. Install the [`zung`](https://crates.io/crates/zung) crate and
+/// run `zung mini progbar` to see what options are available
 #[derive(Debug, Args)]
 #[command(flatten_help = true, subcommand_required = true)]
 pub struct MiniArgs {
@@ -19,6 +21,28 @@ pub struct MiniArgs {
 enum MiniCommands {
     /// Print a progress bar to an iterator.
     Progbar {
+        #[command(subcommand)]
+        command: ProgBarCommands,
+    },
+}
+
+#[derive(Clone, Subcommand, Debug)]
+#[command(arg_required_else_help = true)]
+enum ProgBarCommands {
+    UnBounded {
+        #[arg(short, long, default_value_t = String::from("Simulating Loading..."))]
+        message: String,
+    },
+    Bounded {
+        #[arg(long, default_value_t = String::from("["))]
+        delim_start: String,
+
+        #[arg( long, default_value_t = String::from("]"))]
+        delim_close: String,
+
+        #[arg(long, default_value_t = String::from("#"))]
+        bar_style: String,
+
         #[arg(short, long, default_value_t = 50)]
         iter_count: u8,
     },
@@ -27,22 +51,32 @@ enum MiniCommands {
 impl MiniArgs {
     pub fn run(self) {
         match self.command {
-            MiniCommands::Progbar { iter_count } => {
+            MiniCommands::Progbar { command } => {
                 use std::thread::sleep;
                 use std::time::Duration;
 
-                // test run UnBounded
-                for _ in (0..iter_count).progbar() {
-                    sleep(Duration::from_millis(50))
-                }
-
-                // test run Bounded
-                for _ in (0..iter_count)
-                    .progbar()
-                    .bar_style('=')
-                    .with_bounds('(', ')')
-                {
-                    sleep(Duration::from_millis(50))
+                match command {
+                    ProgBarCommands::UnBounded { message } => {
+                        // test run UnBounded
+                        for _ in (0..).progbar().with_message(&message) {
+                            sleep(Duration::from_millis(50))
+                        }
+                    }
+                    ProgBarCommands::Bounded {
+                        delim_start,
+                        delim_close,
+                        bar_style,
+                        iter_count,
+                    } => {
+                        // test run Bounded
+                        for _ in (0..iter_count)
+                            .progbar()
+                            .with_bounds(delim_start, delim_close)
+                            .bar_style(bar_style)
+                        {
+                            sleep(Duration::from_millis(50))
+                        }
+                    }
                 }
             }
         }
