@@ -17,4 +17,4 @@ resolver = "2"
 anstyle = "1.0.8"
 clap = { version = "4.5.18", features = ["derive"] }
 
-zung_mini = { version = "0.1.1", path = "./zung_mini" }
+zung_mini = { version = "0.1.2", path = "./zung_mini" }
