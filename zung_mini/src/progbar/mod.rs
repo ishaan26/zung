@@ -28,7 +28,7 @@
 //! This example shows how to create a simple progress bar for a range of numbers:
 //!
 //! ```rust
-//! use mini::progbar::ProgBarExt;
+//! use zung_mini::progbar::ProgBarExt;
 //!
 //! for i in (0..).progbar() {
 //!     // Perform work for each item
@@ -48,7 +48,7 @@
 //! [`with_bounds()`](`ProgBar::with_bounds()`) method to show percentage-based progress:
 //!
 //! ```rust
-//! use mini::progbar::ProgBarExt;
+//! use zung_mini::progbar::ProgBarExt;
 //!
 //! let progbar = (0..100).progbar().with_bounds('[', ']');
 //! for _ in progbar {
@@ -67,7 +67,7 @@
 //! [`bar_style()`](`ProgBar::bar_style()`) method to change the fill character:
 //!
 //! ```rust
-//! use mini::progbar::ProgBarExt;
+//! use zung_mini::progbar::ProgBarExt;
 //!
 //! let progbar = (0..10).progbar().bar_style("=").with_bounds('<', '>');
 //! for _ in progbar {
@@ -153,7 +153,7 @@ impl<T, Bound> ProgBar<T, Bound> {
     ///
     /// ```no_run
     ///
-    /// use mini::progbar::ProgBarExt;
+    /// use zung_mini::progbar::ProgBarExt;
     ///
     /// (0..100)
     ///    .progbar()
@@ -233,7 +233,7 @@ where
     /// Creating a bounded progress bar with square brackets as delimiters:
     ///
     /// ```rust
-    /// use mini::progbar::ProgBarExt;
+    /// use zung_mini::progbar::ProgBarExt;
     /// let progbar = (0..10).progbar().with_bounds('[', ']');
     /// for i in progbar {
     ///     // Do some work for each iteration
@@ -286,7 +286,7 @@ where
 ///
 /// `ProgBarExt` serves as the foundation of the progress bar library, allowing any iterator
 /// to be easily wrapped in a progress bar. By implementing this trait, any iterator can
-/// be transformed into a `ProgBar` with minimal effort, using the `.progbar()` method.
+/// be transformed into a `ProgBar` with zung_minimal effort, using the `.progbar()` method.
 ///
 /// The progress bar created by [.progbar()](`ProgBarExt::progbar()`) starts in an unbounded state, meaning it
 /// doesn't initially know the total size of the iteration. However, for iterators that
@@ -298,7 +298,7 @@ where
 /// To use [`ProgBarExt`], simply import the trait and call [`.progbar()`] on any iterator:
 ///
 /// ```rust
-/// use mini::progbar::ProgBarExt;
+/// use zung_mini::progbar::ProgBarExt;
 ///
 /// for i in (0..10).progbar() {
 ///     // Do some work with the iterator
@@ -313,7 +313,7 @@ where
 /// ## Basic Usage
 ///
 /// ```rust
-/// use mini::progbar::ProgBarExt;
+/// use zung_mini::progbar::ProgBarExt;
 ///
 /// // Using progbar on a range
 /// for i in (0..5).progbar() {
@@ -324,7 +324,7 @@ where
 /// ## Bounded Progress Bar
 ///
 /// ```rust
-/// use mini::progbar::ProgBarExt;
+/// use zung_mini::progbar::ProgBarExt;
 ///
 /// let progbar = (0..10).progbar().with_bounds('[', ']');
 /// for i in progbar {
@@ -335,7 +335,7 @@ where
 /// ## Custom Bar Style
 ///
 /// ```rust
-/// use mini::progbar::ProgBarExt;
+/// use zung_mini::progbar::ProgBarExt;
 ///
 /// let progbar = (0..10).progbar().bar_style("=").with_bounds('<', '>');
 /// for _ in progbar {

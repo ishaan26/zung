@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use mini::MiniArgs;
+use zung_mini::MiniArgs;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None, styles=get_styles())] // Read from `Cargo.toml`

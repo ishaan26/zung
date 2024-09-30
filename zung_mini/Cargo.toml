@@ -1,9 +1,13 @@
 [package]
-name = "mini"
+name = "zung_mini"
 version = "0.1.0"
 edition = "2021"
 authors = ["Ishaan Goel <ishaangoel.99@gmail.com>"]
 description = "Mini rust projects that target specific features of rust"
+license = "MIT"
+repository = "https://github.com/ishaan26/zung"
+readme = "README.md"
+keywords = ["projects", "learning", "mini"]
 
 [dependencies]
 clap = { version = "4.5.18", features = ["derive"] }
