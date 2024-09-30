@@ -29,7 +29,10 @@ enum MiniCommands {
 #[derive(Clone, Subcommand, Debug)]
 #[command(arg_required_else_help = true)]
 enum ProgBarCommands {
-    UnBounded,
+    UnBounded {
+        #[arg(short, long, default_value_t = String::from("Simulating Loading..."))]
+        message: String,
+    },
     Bounded {
         #[arg(long, default_value_t = String::from("["))]
         delim_start: String,
@@ -53,9 +56,9 @@ impl MiniArgs {
                 use std::time::Duration;
 
                 match command {
-                    ProgBarCommands::UnBounded => {
+                    ProgBarCommands::UnBounded { message } => {
                         // test run UnBounded
-                        for _ in (0..).progbar() {
+                        for _ in (0..).progbar().with_message(message) {
                             sleep(Duration::from_millis(50))
                         }
                     }

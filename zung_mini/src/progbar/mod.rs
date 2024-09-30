@@ -128,12 +128,13 @@ pub struct Bounded<D: Display> {
     bar: BarStyle,
 }
 
-/// Creates a ProgBar type where the `progbar()` method is called over any iterator.
+/// Created through the [`progbar()`](ProgBarExt::progbar()) method called over any iterator.
 #[derive(Debug)]
 pub struct ProgBar<T, Bound> {
     iterator: T,
     step: usize,
     bound: Bound,
+    message: String,
 }
 
 impl<T> ProgBar<T, UnBounded> {
@@ -142,11 +143,17 @@ impl<T> ProgBar<T, UnBounded> {
         Self {
             iterator,
             step: 0,
+            message: String::from("Loading..."),
             bound: UnBounded {
                 spinner: &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'],
                 spinner_step: Cell::new(0),
             },
         }
+    }
+
+    pub fn with_message(mut self, msg: String) -> Self {
+        self.message = msg;
+        self
     }
 }
 
@@ -164,7 +171,10 @@ impl ProgBarDisplay for UnBounded {
             progress.bound.spinner_step.set(0);
         }
 
-        print!("  {}\r", progress.bound.spinner[spinner_step]);
+        print!(
+            "  {} {}\r",
+            progress.bound.spinner[spinner_step], progress.message
+        );
         io::stdout().flush().unwrap();
 
         thread::sleep(Duration::from_millis(50));
@@ -251,6 +261,7 @@ where
             iterator: self.iterator,
             step: self.step,
             bound,
+            message: String::new(),
         }
     }
 }
