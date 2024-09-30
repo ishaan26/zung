@@ -1,7 +1,9 @@
 //! Implementation of a progress bar over iterators based on ["Type-Driven API Design in Rust" by
 //! Will Crichton](https://www.youtube.com/watch?v=bnnacleqg6k)
 //!
-//! # Introduction This library provides a simple, customizable progress bar for iterators in Rust.
+//! # Introduction
+//!
+//! This library provides a simple, customizable progress bar for iterators in Rust.
 //! It is designed to visually track the progress of any iterator, whether it is bounded (i.e., has
 //! a known size) or unbounded (i.e., no pre-determined size).
 //!
@@ -31,7 +33,7 @@
 //! use zung_mini::progbar::ProgBarExt;
 //!
 //! for i in (0..).progbar() {
-//!     // Perform work for each item
+//!     // Perform work
 //!     println!("Processing item: {}", i);
 //!     # break;
 //! }
@@ -52,7 +54,7 @@
 //!
 //! let progbar = (0..100).progbar().with_bounds('[', ']');
 //! for _ in progbar {
-//!     // Simulate some processing work
+//!     // Perform work
 //! }
 //! ```
 //!
@@ -71,7 +73,7 @@
 //!
 //! let progbar = (0..10).progbar().bar_style("=").with_bounds('<', '>');
 //! for _ in progbar {
-//!     // Simulate work
+//!     // Perform work
 //! }
 //! ```
 //!
