@@ -166,7 +166,7 @@ impl<T> ProgBar<T, UnBounded> {
     /// ```rust
     /// use zung_mini::progbar::ProgBarExt;
     ///
-    /// for _ in (0..).progbar().with_message("Processing...".to_string()) {
+    /// for _ in (0..).progbar().with_message("Processing...") {
     ///         // Perform work here
     ///         # break;
     /// };
@@ -516,5 +516,21 @@ mod tests {
             progbar.next();
             assert_eq!(progbar.bound.percentage.get(), i * 10);
         }
+    }
+
+    #[test]
+    fn test_with_message() {
+        let mut progbar = (0..).progbar().with_message("Loading...");
+
+        // Test the initial message
+        assert_eq!(progbar.message, "Loading...");
+
+        // Test updating the message
+        progbar = progbar.with_message("Processing...");
+        assert_eq!(progbar.message, "Processing...");
+
+        // Ensure the progress bar can still iterate, though unbounded.
+        assert_eq!(progbar.next(), Some(0)); // First item
+        assert_eq!(progbar.step, 1); // Progress updated by 1 step
     }
 }
