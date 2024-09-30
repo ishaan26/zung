@@ -3,7 +3,11 @@ name = "zung"
 version = "0.1.0"
 edition = "2021"
 authors = ["Ishaan Goel <ishaangoel.99@gmail.com>"]
-description = "A monolith of various rust projects"
+description = "A monolith of rust projects"
+license = "MIT"
+repository = "https://github.com/ishaan26/zung"
+readme = "README.md"
+keywords = ["projects", "learning", "monolith"]
 
 [workspace]
 members = ["zung_mini"]
@@ -13,4 +17,4 @@ resolver = "2"
 anstyle = "1.0.8"
 clap = { version = "4.5.18", features = ["derive"] }
 
-mini = { path = "./zung_mini" }
+mini = { version = "0.1.0", path = "./zung_mini" }
