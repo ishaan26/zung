@@ -71,7 +71,7 @@
 //! ```rust
 //! use zung_mini::progbar::ProgBarExt;
 //!
-//! let progbar = (0..10).progbar().bar_style("=").with_bounds('<', '>');
+//! let progbar = (0..10).progbar().with_bounds('<', '>').bar_style("=");
 //! for _ in progbar {
 //!     // Perform work
 //! }
@@ -151,6 +151,26 @@ impl<T> ProgBar<T, UnBounded> {
         }
     }
 
+    /// Sets a custom message to display alongside the progress bar.
+    ///
+    /// This method allows you to specify a custom message that will be displayed
+    /// with each update of the progress bar. This can be useful for providing
+    /// additional context or information while tracking progress.
+    ///
+    /// **Note:** This method is only applicable to unbounded iterators, which do
+    /// not have a defined end. The message will appear each time the progress is
+    /// displayed.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use zung_mini::progbar::ProgBarExt;
+    ///
+    /// for _ in (0..).progbar().with_message("Processing...".to_string()) {
+    ///         // Perform work here
+    ///         # break;
+    /// };
+    /// ```
     pub fn with_message(mut self, msg: String) -> Self {
         self.message = msg;
         self
@@ -285,15 +305,15 @@ where
     ///
     /// (0..100)
     ///    .progbar()
-    ///    .bar_style(&String::from("="))
     ///    .with_bounds("|", "|")
+    ///    .bar_style(&String::from("="))
     ///    .for_each(|_| {
     ///         // Do some calculation
     ///    });
     ///    
     /// // or
     ///
-    /// for _ in (0..).progbar().bar_style(&"<>") {
+    /// for _ in (0..).progbar() {
     ///     // Do some calculation
     /// }
     ///
@@ -365,7 +385,7 @@ where
 /// ```rust
 /// use zung_mini::progbar::ProgBarExt;
 ///
-/// let progbar = (0..10).progbar().bar_style("=").with_bounds('<', '>');
+/// let progbar = (0..10).progbar().with_bounds('<', '>').bar_style("=");
 /// for _ in progbar {
 ///     // Simulate some work
 /// }
