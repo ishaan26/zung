@@ -3,9 +3,11 @@
 //! Mini rust projects that target specific features of rust
 
 pub mod progbar;
+pub mod strsplit;
 
 use clap::{Args, Subcommand};
 use progbar::ProgBarExt;
+use strsplit::StrsplitExt;
 
 /// An example Clap Argument builder. Install the [`zung`](https://crates.io/crates/zung) crate and
 /// run `zung mini progbar` to see what options are available
@@ -23,6 +25,15 @@ enum MiniCommands {
     Progbar {
         #[command(subcommand)]
         command: ProgBarCommands,
+    },
+
+    /// Split the provided string on the provided needle.
+    Strsplit {
+        #[arg(short, long)]
+        needle: String,
+
+        #[arg(short, long)]
+        string: String,
     },
 }
 
@@ -86,6 +97,11 @@ impl MiniArgs {
                         }
                     }
                 }
+            }
+
+            MiniCommands::Strsplit { needle, string } => {
+                let result = string.strsplit(&needle).into_vec();
+                println!("{:?}", result);
             }
         }
     }
