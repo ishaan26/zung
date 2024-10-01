@@ -2,12 +2,13 @@
 //! Lifetime Annotations](https://www.youtube.com/watch?v=rAl-9HwD858)
 //!
 //! ## Overview
-
+//!
 //! This module provides the [`StrsplitExt`] trait, which adds a
-//! [`strsplit()`](StrsplitExt::strsplit()) method to both [`String`] and [`&str`]. This method returns
-//! an iterator ([`Strsplit`]) that yields the portions of the original string that appear between
-//! occurrences of the specified delimiter. The splitting is done in a lazy fashion, meaning that
-//! substrings are produced one at a time as needed, without pre-allocating memory for all results.
+//! [`strsplit()`](StrsplitExt::strsplit()) method to both [`String`] and [`&str`]. This method
+//! returns an iterator ([`Strsplit`]) that yields the portions of the original string that appear
+//! between occurrences of the specified delimiter. The splitting is done in a lazy fashion,
+//! meaning that substrings are produced one at a time as needed, without pre-allocating memory for
+//! all results.
 //!
 //! The `Strsplit` iterator can also be collected into a `Vec<&str>` for cases where the entire
 //! result is needed upfront.
@@ -24,6 +25,7 @@
 //! let haystack = "a,b,c,d,e";
 //! let split = haystack.strsplit(",").into_vec();
 //! assert_eq!(split, vec!["a", "b", "c", "d", "e"]);
+//! ```
 
 /// A trait to extend string types with the `strsplit` method.
 /// and returns a `Strsplit` iterator over the resulting substrings.
@@ -69,7 +71,7 @@ where
     'b: 'a,
 {
     fn strsplit(&'a self, needle: &'b str) -> Strsplit<'a> {
-        Strsplit::new(&self, needle)
+        Strsplit::new(self, needle)
     }
 }
 
@@ -78,7 +80,7 @@ where
     'b: 'a,
 {
     fn strsplit(&'a self, needle: &'b str) -> Strsplit<'a> {
-        Strsplit::new(&self, needle)
+        Strsplit::new(self, needle)
     }
 }
 
@@ -96,7 +98,7 @@ impl<'a> Strsplit<'a> {
     fn new(haystack: &'a str, needle: &'a str) -> Self {
         assert!(!needle.is_empty(), "Empty needle is not allowed");
         Self {
-            remainder: Some(&haystack),
+            remainder: Some(haystack),
             needle,
         }
     }
