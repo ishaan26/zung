@@ -1,9 +1,8 @@
 Mini rust projects that target specific features of rust
 
-> # Disclaimer
+ ### _Disclaimer_
 
-> This library is intended for **learning purposes only** and is not production-grade. While it demonstrates core functionality for implementing a progress bar in Rust, it may lack the optimizations, testing, and features required for production use. Use at your own risk in critical applications.
-
+_This library is intended for **learning purposes only**_
 ## Table of Contents
 
 - [Mini Project 1](#mini-project-1---progbar)
@@ -24,4 +23,4 @@ Mini rust projects that target specific features of rust
 
 ## Usage
 
-See the [docs](https://docs.rs/zung_mini/0.1.2/zung_mini/progbar/index.html) for how to use this library.
+See the [docs](https://docs.rs/zung_mini/latest/zung_mini/progbar/index.html) for how to use this library.
