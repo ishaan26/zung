@@ -14,6 +14,6 @@ members = ["zung_mini"]
 resolver = "2"
 
 [dependencies]
-zung_mini = { version = "0.2.0", path = "./zung_mini" }
+zung_mini = { version = "0.2.1", path = "./zung_mini" }
 anstyle = "1.0.8"
 clap = { version = "4.5.18", features = ["derive"] }

@@ -29,20 +29,28 @@ enum MiniCommands {
 #[derive(Clone, Subcommand, Debug)]
 #[command(arg_required_else_help = true)]
 enum ProgBarCommands {
+    /// Runs the progbar on an simulated infinite loop.
     UnBounded {
+        /// Custom message to display along with the spinner.
         #[arg(short, long, default_value_t = String::from("Simulating Loading..."))]
         message: String,
     },
+
+    /// Runs the progbar on an simulated loop having len of iter_count.
     Bounded {
+        /// Custom starting delimiter for the loading bar.
         #[arg(long, default_value_t = String::from("["))]
         delim_start: String,
 
+        /// Custom ending delimiter for the loading bar.
         #[arg( long, default_value_t = String::from("]"))]
         delim_close: String,
 
+        /// Custom bar style. Each value specified will be repeated on each iteration.
         #[arg(long, default_value_t = String::from("#"))]
         bar_style: String,
 
+        /// Set custom length of the loop.
         #[arg(short, long, default_value_t = 50)]
         iter_count: u8,
     },
