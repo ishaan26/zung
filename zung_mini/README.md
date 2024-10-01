@@ -1,19 +1,22 @@
-Mini rust projects that target specific features of rust
+# Zung Mini - Mini Rust Projects
 
-> # Disclaimer
+This Library consists of varouis small rust projects that target different features of rust such as traits, lifetimes, type system etc. Each project is separated out in different modules as listed out in [Table of Contents](#table-of-contents) below. 
 
-> This library is intended for **learning purposes only** and is not production-grade. While it demonstrates core functionality for implementing a progress bar in Rust, it may lack the optimizations, testing, and features required for production use. Use at your own risk in critical applications.
+ ### _Disclaimer_
+
+_This library is intended for **learning purposes only**. While I will do my best to write the most professional code I can (with my limited coding knowlege), it is not my intention for this library to be used in any production environment._
 
 ## Table of Contents
 
 - [Mini Project 1](#mini-project-1---progbar)
-  - [Usage](#usage)
+  - [Features](#features) 
+- [Usage](#usage)
 
 # Mini Project 1 - ProgBar
 
 > A Simple Progress Bar for Rust Iterators
 
-`ProgBar` is a lightweight and customizable progress bar library for Rust iterators. It allows you to easily track the progress of any iterator in your terminal with visual feedback. Whether your iterator is bounded (has a known size) or unbounded, `ProgBar` adapts to display the progress accordingly.
+[`ProgBar`](https://docs.rs/zung_mini/latest/zung_mini/progbar/index.html) module is a lightweight and customizable progress bar library for Rust iterators. It allows you to easily track the progress of any iterator in your terminal with visual feedback. Whether your iterator is bounded (has a known size) or unbounded (infinite loop), `ProgBar` adapts to display the progress accordingly.
 
 ## Features
 
@@ -22,6 +25,6 @@ Mini rust projects that target specific features of rust
 - **Customizable Appearance**: Modify the style and delimiters of the progress bar.
 - **Real-time Terminal Display**: Live updates of the progress bar in the terminal as your iterator progresses.
 
-## Usage
+# Usage
 
-See the [docs](https://docs.rs/zung_mini/0.1.2/zung_mini/progbar/index.html) for how to use this library.
+See the [docs](https://docs.rs/zung_mini/latest/zung_mini/progbar/index.html) for how to use each module of this library.
