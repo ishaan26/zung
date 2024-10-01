@@ -1,13 +1,16 @@
-___Mini rust projects that target specific features of rust___
+# Zung Mini - Mini Rust Projects
+
+This Library consists of varouis small rust projects that target different features of rust such as traits, lifetimes, type system etc. Each project is separated out in different modules as listed out in [Table of Contents](#table-of-contents) below. 
 
  ### _Disclaimer_
 
 _This library is intended for **learning purposes only**. While I will do my best to write the most professional code I can (with my limited coding knowlege), it is not my intention for this library to be used in any production environment._
+
 ## Table of Contents
 
 - [Mini Project 1](#mini-project-1---progbar)
   - [Features](#features) 
-  - [Usage](#usage)
+- [Usage](#usage)
 
 # Mini Project 1 - ProgBar
 
@@ -22,6 +25,6 @@ _This library is intended for **learning purposes only**. While I will do my bes
 - **Customizable Appearance**: Modify the style and delimiters of the progress bar.
 - **Real-time Terminal Display**: Live updates of the progress bar in the terminal as your iterator progresses.
 
-## Usage
+# Usage
 
-See the [docs](https://docs.rs/zung_mini/latest/zung_mini/progbar/index.html) for how to use this library.
+See the [docs](https://docs.rs/zung_mini/latest/zung_mini/progbar/index.html) for how to use each module of this library.
