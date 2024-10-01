@@ -41,7 +41,7 @@
 //!
 //! The output will look something like this in the terminal as the progress bar updates:
 //! ```text
-//! #####
+//!  ⠼ Loading...
 //! ```
 //!
 //! ## Bounded Progress Bar with Custom Delimiters
