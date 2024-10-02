@@ -14,14 +14,14 @@
 //! # Features
 //!
 //! - **Easy to use**: The [`.progbar()`](ProgBarExt::progbar()) method can be applied to any
-//! iterator, making progress tracking effortless.
+//!   iterator, making progress tracking effortless.
 //! - **Bounded & Unbounded Progress Bars**: Automatically handles both finite and infinite
-//! iterators. Bounded bars can display percentages, while unbounded bars display the progress
-//! incrementally.
+//!   iterators. Bounded bars can display percentages, while unbounded bars display the progress
+//!   incrementally.
 //! - **Customizable Styles**: Modify the progress bar's appearance with custom delimiters and bar
-//! styles.
+//!   styles.
 //! - **Terminal Display**: The library displays a live progress bar in the terminal, updating in
-//! real-time during iteration.
+//!   real-time during iteration.
 //!
 //! # Example Usage
 //!

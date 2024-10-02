@@ -3,9 +3,11 @@
 //! Mini rust projects that target specific features of rust
 
 pub mod progbar;
+pub mod strsplit;
 
 use clap::{Args, Subcommand};
 use progbar::ProgBarExt;
+use strsplit::StrsplitExt;
 
 /// An example Clap Argument builder. Install the [`zung`](https://crates.io/crates/zung) crate and
 /// run `zung mini progbar` to see what options are available
@@ -24,19 +26,51 @@ enum MiniCommands {
         #[command(subcommand)]
         command: ProgBarCommands,
     },
+
+    /// Perform splitting functions over a string.
+    Strsplit {
+        #[command(subcommand)]
+        command: StrsplitCommands,
+    },
+}
+
+#[derive(Clone, Subcommand, Debug)]
+#[command(arg_required_else_help = true)]
+enum StrsplitCommands {
+    /// Split the provided string on the provided needle.
+    Split {
+        /// The needle to be fond in the haystack.
+        #[arg(short, long)]
+        needle: String,
+
+        /// The haystack to find the needle in.
+        #[arg(short, long)]
+        string: String,
+    },
+
+    /// Split the provided string until the needle occurs in the String.
+    Until {
+        /// The needle to be fond in the haystack.
+        #[arg(short, long)]
+        needle: String,
+
+        /// The haystack to find the needle in.
+        #[arg(short, long)]
+        string: String,
+    },
 }
 
 #[derive(Clone, Subcommand, Debug)]
 #[command(arg_required_else_help = true)]
 enum ProgBarCommands {
-    /// Runs the progbar on an simulated infinite loop.
+    /// Runs the progbar on a simulated infinite loop.
     UnBounded {
         /// Custom message to display along with the spinner.
         #[arg(short, long, default_value_t = String::from("Simulating Loading..."))]
         message: String,
     },
 
-    /// Runs the progbar on an simulated loop having len of iter_count.
+    /// Runs the progbar on a simulated loop having len of iter_count.
     Bounded {
         /// Custom starting delimiter for the loading bar.
         #[arg(long, default_value_t = String::from("["))]
@@ -87,6 +121,17 @@ impl MiniArgs {
                     }
                 }
             }
+
+            MiniCommands::Strsplit { command } => match command {
+                StrsplitCommands::Split { needle, string } => {
+                    let result = string.strsplit(&needle).into_vec();
+                    println!("{:?}", result);
+                }
+                StrsplitCommands::Until { needle, string } => {
+                    let result = string.till_needle(needle);
+                    println!("{:?}", result);
+                }
+            },
         }
     }
 }
