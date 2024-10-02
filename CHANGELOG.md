@@ -2,6 +2,31 @@
 
 All notable changes to Zung_mini will be documented in this file.
 
+## [zung_mini-v0.3.0] - 2024-10-02
+
+### 🚀 Features
+
+- Introducing a new mini project: Strsplit
+
+### 🐛 Bug Fixes
+
+- Grammar
+- Clippy
+
+### ⚙️ Miscellaneous Tasks
+
+- Release
+
+### 🛡️ Security
+
+- _(deps)_ Bump codecov/codecov-action from 3 to 4 (#21)
+- _(deps)_ Bump actions/checkout from 3 to 4 (#22)
+
+### Build
+
+- _(deps)_ Bump codecov/codecov-action from 3 to 4
+- _(deps)_ Bump actions/checkout from 3 to 4
+
 ## [zung_mini-v0.2.1] - 2024-10-01
 
 ### 📚 Documentation
