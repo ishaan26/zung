@@ -27,11 +27,34 @@ enum MiniCommands {
         command: ProgBarCommands,
     },
 
-    /// Split the provided string on the provided needle.
+    /// Perform splitting functions over a string.
     Strsplit {
+        #[command(subcommand)]
+        command: StrsplitCommands,
+    },
+}
+
+#[derive(Clone, Subcommand, Debug)]
+#[command(arg_required_else_help = true)]
+enum StrsplitCommands {
+    /// Split the provided string on the provided needle.
+    Split {
+        /// The needle to be fond in the haystack.
         #[arg(short, long)]
         needle: String,
 
+        /// The haystack to find the needle in.
+        #[arg(short, long)]
+        string: String,
+    },
+
+    /// Split the provided string until the needle occurs in the String.
+    Until {
+        /// The needle to be fond in the haystack.
+        #[arg(short, long)]
+        needle: String,
+
+        /// The haystack to find the needle in.
         #[arg(short, long)]
         string: String,
     },
@@ -99,10 +122,16 @@ impl MiniArgs {
                 }
             }
 
-            MiniCommands::Strsplit { needle, string } => {
-                let result = string.strsplit(&needle).into_vec();
-                println!("{:?}", result);
-            }
+            MiniCommands::Strsplit { command } => match command {
+                StrsplitCommands::Split { needle, string } => {
+                    let result = string.strsplit(&needle).into_vec();
+                    println!("{:?}", result);
+                }
+                StrsplitCommands::Until { needle, string } => {
+                    let result = string.till_needle(needle);
+                    println!("{:?}", result);
+                }
+            },
         }
     }
 }

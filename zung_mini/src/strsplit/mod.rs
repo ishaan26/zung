@@ -66,6 +66,32 @@ where
     fn strsplit<P>(&'a self, needle: P) -> Strsplit<'a, P>
     where
         P: 'b + AsRef<str>;
+
+    /// Returns the substring before the first occurrence of the given `needle`
+    /// without scanning the entire string.
+    ///
+    /// This function splits the string using the provided `needle` and immediately
+    /// returns the portion of the string before the first occurrence of the `needle`.
+    /// It stops searching once the `needle` is found, making it efficient as it
+    /// avoids iterating over the entire string unnecessarily. If the `needle` is not found,
+    /// the function returns the entire string.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use zung_mini::strsplit::StrsplitExt;
+    /// let text = "hello world";
+    ///
+    /// let result = text.till_needle(" ");
+    /// assert_eq!(result, "hello");
+    /// ```
+    fn till_needle<P>(&'a self, needle: P) -> &str
+    where
+        P: 'b + AsRef<str> + Clone,
+    {
+        let mut splitter = self.strsplit(needle.clone());
+        splitter.next().unwrap()
+    }
 }
 
 impl<'a, 'b> StrsplitExt<'a, 'b> for String
@@ -217,5 +243,54 @@ mod tests {
     fn strsplit_with_comma_works() {
         let a = "a b c, d e f";
         assert_eq!(a.strsplit(",").into_vec(), vec!["a b c", " d e f"]);
+    }
+
+    #[test]
+    fn till_needle_finds_substring() {
+        let text = "hello world";
+        let result = text.till_needle(" ");
+        assert_eq!(result, "hello");
+    }
+
+    #[test]
+    fn till_needle_returns_entire_string_if_needle_not_found() {
+        let text = "hello";
+        let result = text.till_needle(",");
+        assert_eq!(result, "hello");
+    }
+
+    #[test]
+    fn till_needle_with_multiple_occurrences() {
+        let text = "apple,banana,orange";
+        let result = text.till_needle(",");
+        assert_eq!(result, "apple"); // Stops at first occurrence
+    }
+
+    #[test]
+    fn till_needle_returns_none_for_empty_string() {
+        let text = "";
+        let result = text.till_needle(",");
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    #[should_panic(expected = "Empty needle is not allowed")]
+    fn till_needle_empty_needle_panics() {
+        let text = "example";
+        let _ = text.till_needle(""); // Should panic due to empty needle
+    }
+
+    #[test]
+    fn till_needle_handles_special_characters() {
+        let text = "foo@bar.com";
+        let result = text.till_needle("@");
+        assert_eq!(result, "foo");
+    }
+
+    #[test]
+    fn till_needle_works_with_longer_needle() {
+        let text = "this is a test string";
+        let result = text.till_needle("is");
+        assert_eq!(result, "th");
     }
 }
