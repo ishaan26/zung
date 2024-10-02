@@ -63,14 +63,19 @@ where
     /// let split: Vec<&str> = haystack.strsplit(" ").collect();
     /// assert_eq!(split, vec!["this", "is", "an", "example"]);
     /// ```
-    fn strsplit(&'a self, needle: &'b str) -> Strsplit;
+    fn strsplit<P>(&'a self, needle: P) -> Strsplit<'a, P>
+    where
+        P: 'b + AsRef<str>;
 }
 
 impl<'a, 'b> StrsplitExt<'a, 'b> for String
 where
     'b: 'a,
 {
-    fn strsplit(&'a self, needle: &'b str) -> Strsplit<'a> {
+    fn strsplit<P>(&'a self, needle: P) -> Strsplit<'a, P>
+    where
+        P: 'b + AsRef<str>,
+    {
         Strsplit::new(self, needle)
     }
 }
@@ -79,7 +84,10 @@ impl<'a, 'b> StrsplitExt<'a, 'b> for &str
 where
     'b: 'a,
 {
-    fn strsplit(&'a self, needle: &'b str) -> Strsplit<'a> {
+    fn strsplit<P>(&'a self, needle: P) -> Strsplit<'a, P>
+    where
+        P: 'b + AsRef<str>,
+    {
         Strsplit::new(self, needle)
     }
 }
@@ -89,14 +97,17 @@ where
 /// occurrences of the delimiter.
 ///
 /// This type is constructed by the [`strsplit()`](StrsplitExt::strsplit()) method.
-pub struct Strsplit<'a> {
+pub struct Strsplit<'a, N> {
     remainder: Option<&'a str>,
-    needle: &'a str,
+    needle: N,
 }
 
-impl<'a> Strsplit<'a> {
-    fn new(haystack: &'a str, needle: &'a str) -> Self {
-        assert!(!needle.is_empty(), "Empty needle is not allowed");
+impl<'a, N> Strsplit<'a, N>
+where
+    N: 'a + AsRef<str>,
+{
+    fn new(haystack: &'a str, needle: N) -> Self {
+        assert!(!needle.as_ref().is_empty(), "Empty needle is not allowed");
         Self {
             remainder: Some(haystack),
             needle,
@@ -125,13 +136,16 @@ impl<'a> Strsplit<'a> {
     }
 }
 
-impl<'a> Iterator for Strsplit<'a> {
+impl<'a, N> Iterator for Strsplit<'a, N>
+where
+    N: 'a + AsRef<str>,
+{
     type Item = &'a str;
 
     fn next(&mut self) -> Option<Self::Item> {
         let remainder = self.remainder.as_mut()?;
 
-        if let Some((start, end)) = find_needle(self.needle, remainder) {
+        if let Some((start, end)) = find_needle(self.needle.as_ref(), remainder) {
             let before_needle = &remainder[..start];
             *remainder = &remainder[end..];
             Some(before_needle)
@@ -147,15 +161,35 @@ fn find_needle(needle: &str, haystack: &str) -> Option<(usize, usize)> {
         .map(|index| (index, index + needle.len()))
 }
 
+#[cfg(test)]
 mod tests {
-    #[cfg(test)]
     use super::*;
+
+    #[test]
+    fn test_new() {
+        let a = "a b c d e f".strsplit(" ");
+        let b = Strsplit {
+            remainder: Some("a b c d e f"),
+            needle: " ",
+        };
+        assert_eq!(a.remainder, b.remainder);
+        assert_eq!(a.needle, b.needle);
+    }
 
     #[test]
     fn strsplit_works() {
         let a = "a b c d e f";
         assert_eq!(
             a.strsplit(" ").into_vec(),
+            vec!["a", "b", "c", "d", "e", "f"]
+        );
+    }
+
+    #[test]
+    fn strsplit_works_with_string() {
+        let a = "a b c d e f";
+        assert_eq!(
+            a.strsplit(String::from(" ")).into_vec(),
             vec!["a", "b", "c", "d", "e", "f"]
         );
     }
