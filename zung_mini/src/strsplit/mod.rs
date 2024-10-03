@@ -123,6 +123,7 @@ where
 /// occurrences of the delimiter.
 ///
 /// This type is constructed by the [`strsplit()`](StrsplitExt::strsplit()) method.
+#[derive(Debug, Clone, Copy)]
 pub struct Strsplit<'a, N> {
     remainder: Option<&'a str>,
     needle: N,
@@ -178,6 +179,15 @@ where
         } else {
             self.remainder.take()
         }
+    }
+}
+
+impl<'a, N> From<Strsplit<'a, N>> for Vec<&'a str>
+where
+    N: 'a + AsRef<str>,
+{
+    fn from(value: Strsplit<'a, N>) -> Self {
+        value.into_vec()
     }
 }
 
@@ -292,5 +302,14 @@ mod tests {
         let text = "this is a test string";
         let result = text.till_needle("is");
         assert_eq!(result, "th");
+    }
+
+    #[test]
+    fn test_from_and_into() {
+        let strsplit = "a b c d e f".strsplit(" ");
+        let vec1 = Vec::from(strsplit);
+        let vec2: Vec<&str> = strsplit.into();
+
+        assert_eq!(vec1, vec2)
     }
 }
