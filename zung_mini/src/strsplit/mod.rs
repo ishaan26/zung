@@ -256,6 +256,24 @@ mod tests {
     }
 
     #[test]
+    fn strsplit_from_and_into() {
+        let strsplit = "a b c d e f".strsplit(" ");
+        let vec1 = Vec::from(strsplit);
+        let vec2: Vec<&str> = strsplit.into();
+
+        assert_eq!(vec1, vec2)
+    }
+
+    #[test]
+    fn strsplit_empty_haystack() {
+        let haystack = "";
+        let needle = ",";
+
+        let vec = haystack.strsplit(needle).into_vec();
+        assert_eq!(vec, vec![""]);
+    }
+
+    #[test]
     fn till_needle_finds_substring() {
         let text = "hello world";
         let result = text.till_needle(" ");
@@ -302,14 +320,5 @@ mod tests {
         let text = "this is a test string";
         let result = text.till_needle("is");
         assert_eq!(result, "th");
-    }
-
-    #[test]
-    fn test_from_and_into() {
-        let strsplit = "a b c d e f".strsplit(" ");
-        let vec1 = Vec::from(strsplit);
-        let vec2: Vec<&str> = strsplit.into();
-
-        assert_eq!(vec1, vec2)
     }
 }
