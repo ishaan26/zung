@@ -14,8 +14,9 @@ coverage:
 # These files aren't important for coverage
 ignore:
   - "tests"
-  - "main.rs"
-  - "benchmark.rs"
+  - "**/main.rs"
+  - "**/lib.rs"
+  - "**/benchmark.rs"
 
 # Make comments less noisy
 comment:
