@@ -128,7 +128,7 @@ impl MiniArgs {
                     println!("{:?}", result);
                 }
                 StrsplitCommands::Until { needle, string } => {
-                    let result = string.till_needle(needle);
+                    let result = string.strsplit(needle).till_needle();
                     println!("{:?}", result);
                 }
             },
