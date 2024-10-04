@@ -2,6 +2,7 @@
 //!
 //! Mini rust projects that target specific features of rust
 
+pub mod orst;
 pub mod progbar;
 pub mod strsplit;
 
@@ -32,6 +33,9 @@ enum MiniCommands {
         #[command(subcommand)]
         command: StrsplitCommands,
     },
+
+    /// Run custom sorting algorithms.
+    Orst,
 }
 
 #[derive(Clone, Subcommand, Debug)]
@@ -132,6 +136,8 @@ impl MiniArgs {
                     println!("{:?}", result);
                 }
             },
+
+            MiniCommands::Orst => orst::benchmark::run_orst(),
         }
     }
 }

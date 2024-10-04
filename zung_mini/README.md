@@ -10,6 +10,10 @@ _This library is intended for **learning purposes only**. While I will do my bes
 
 - [Mini Project 1](#mini-project-1---progbar)
   - [Features](#features)
+- [Mini Project 2](#mini-project-2---strsplit)
+  - [Features](#features)
+- [Mini Project 3](#mini-project-3---orst)
+  - [Features](#features)
 - [Usage](#usage)
 
 # Mini Project 1 - ProgBar
@@ -31,11 +35,16 @@ The [`ProgBar`](https://docs.rs/zung_mini/latest/zung_mini/progbar/index.html) m
 
 The [`Strsplit`](https://docs.rs/zung_mini/latest/zung_mini/strsplit/index.html) module provides an efficient, iterator-based string splitting utility for Rust. It extends both `String` and `&str` types with a `strsplit` method, allowing users to split strings based on a specified delimiter and iterate over the resulting substrings lazily or collect them all at once. This is particularly useful when you need efficient and flexible string splitting behavior.
 
+# Mini Project 3 - Orst
+
+**\_ _Implementation of custom sorting algorithms along with a benchmark following [Crust of Rust: Sorting Algorithms](https://www.youtube.com/watch?v=h4RkCyJyXmM)_**
+
+The [`Orst`](https://docs.rs/zung_mini/latest/zung_mini/orst/index.html) module provides an custom implementations of sorting algorithms along with a simple algorithm.
+
 ## Features
 
-- **Lazy Evaluation**: The splitting is performed lazily as the iterator progresses, avoiding unnecessary allocation or processing.
-- **Supports Bounded Splits**: You can split on any valid substring and return the result immediately upon the first match.
-- **Panics on Empty Needle**: Ensures correct usage by panicking if an empty delimiter is passed.
+- It sorts stuff.
+- Easy to use.
 
 ---
 
