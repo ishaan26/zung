@@ -11,9 +11,11 @@ coverage:
         # Avoid false negatives
         threshold: 1%
 
-# Test files aren't important for coverage
+# These files aren't important for coverage
 ignore:
   - "tests"
+  - "main.rs"
+  - "benchmark.rs"
 
 # Make comments less noisy
 comment:
