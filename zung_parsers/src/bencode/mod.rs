@@ -167,7 +167,12 @@ impl Bencode {
 
                 while !remainder.is_empty() && !remainder.starts_with('e') {
                     let k = Bencode::from_string(remainder)?;
-                    let v = Bencode::from_string(k.str_remainder.clone())?;
+
+                    if k.str_remainder.is_empty() {
+                        return Err(Error::InvalidValue("Invalid Dictionary format".to_string()));
+                    }
+
+                    let v = Bencode::from_string(k.str_remainder)?;
                     dictionary.insert(k.bencode.to_string(), v.bencode);
                     remainder = v.str_remainder;
                 }
@@ -309,8 +314,14 @@ impl Bencode {
 
                 while !remainder.is_empty() && remainder[0] != b'e' {
                     let k = Bencode::from_bytes(&remainder)?;
+
+                    if k.byte_remainder.is_empty() {
+                        return Err(Error::InvalidValue("Invalid Dictionary format".to_string()));
+                    }
+
                     let v = Bencode::from_bytes(&k.byte_remainder)?;
                     dictionary.insert(k.bencode.to_string(), v.bencode);
+
                     remainder = v.byte_remainder;
                 }
 
@@ -877,5 +888,96 @@ mod tests {
                 .collect()
             )
         );
+    }
+
+    #[test]
+    fn test_invalid_string_encoding() {
+        let bencode_string = "5test"; // Missing ':' to indicate string length
+        let result = Bencode::from_string(bencode_string);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "Invalid type provided");
+    }
+
+    #[test]
+    fn test_invalid_integer_encoding() {
+        let bencode_string = "i42"; // Missing 'e' to end integer
+        let result = Bencode::from_string(bencode_string);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Invalid encoding of integer value"
+        );
+    }
+
+    #[test]
+    fn test_invalid_list_encoding() {
+        let bencode_string = "li42"; // Missing 'e' to end list
+        let result = Bencode::from_string(bencode_string);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Invalid encoding of integer value"
+        );
+    }
+
+    #[test]
+    fn test_invalid_dictionary_encoding() {
+        let bencode_string = "di42e"; // Missing key-value pair structure
+        let result = Bencode::from_string(bencode_string);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "Invalid Dictionary format");
+    }
+
+    #[test]
+    fn test_invalid_utf8_bytes() {
+        let invalid_utf8_bytes = vec![0x80, 0x80]; // Invalid UTF-8 sequence
+        let result = Bencode::from_bytes(&invalid_utf8_bytes);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "Invalid type provided");
+    }
+
+    #[test]
+    fn test_unexpected_end_of_bytes_for_integer() {
+        let bencode_bytes = vec![b'i', b'4', b'2']; // Missing 'e' at the end
+        let result = Bencode::from_bytes(&bencode_bytes);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Cannot find the end tag of the Integer"
+        );
+    }
+
+    #[test]
+    fn test_unexpected_end_of_bytes_for_list() {
+        let bencode_bytes = vec![b'l', b'i', b'4', b'2']; // Missing 'e' at the end
+        let result = Bencode::from_bytes(&bencode_bytes);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_invalid_bencode_type() {
+        let bencode_string = "x42"; // Invalid type 'x'
+        let result = Bencode::from_string(bencode_string);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "Invalid type provided");
+    }
+
+    #[test]
+    fn test_invalid_string_length() {
+        let bencode_string = "10:test"; // Length mismatch: says 10, but only 4 characters provided
+        let result = Bencode::from_string(bencode_string);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Invalid encoding of string value"
+        );
+    }
+
+    #[test]
+    fn test_invalid_key_in_dictionary() {
+        let bencode_string = "di42e"; // Invalid key type (integer instead of string)
+        let result = Bencode::from_string(bencode_string);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "Invalid Dictionary format");
     }
 }
