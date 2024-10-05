@@ -4,11 +4,11 @@ mod ser;
 
 use std::{collections::HashMap, fmt::Display};
 
-use anyhow::{bail, Error, Result};
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 
 use crate::bencode;
+use crate::bencode::error::{Error, Result};
 
 /// Encoding and decoding data in the [Bencode](https://en.wikipedia.org/wiki/Bencode) format.
 ///
@@ -89,7 +89,7 @@ impl Bencode {
     ///
     /// assert_eq!(bencode.to_string(), "[hello, from, rust, bencode]");
     /// ```
-    pub fn from_string(pattern: impl ToString) -> Result<Self, Error> {
+    pub fn from_string(pattern: impl ToString) -> Result<Self> {
         let pattern = pattern.to_string();
         let (tag, value) = pattern.split_at(1);
         let tag = tag.chars().next().unwrap();
@@ -109,10 +109,12 @@ impl Bencode {
                             byte_remainder: Vec::new(),
                         })
                     } else {
-                        bail!("Invalid encoding of string value")
+                        Err(Error::InvalidValue(
+                            "Invalid encoding of string value".to_string(),
+                        ))
                     }
                 }
-                None => bail!("unknown value provided"),
+                None => Err(Error::InvalidType("Invalid type provided".to_string())),
             },
 
             // Integers
@@ -128,13 +130,14 @@ impl Bencode {
                         byte_remainder: Vec::new(),
                     })
                 } else {
-                    bail!("Invalid encoding of integer value")
+                    Err(Error::InvalidValue(
+                        "Invalid encoding of integer value".to_string(),
+                    ))
                 }
             }
 
             // Lists
             'l' => {
-                // TODO: use Vector
                 let mut list = Vec::new();
 
                 let mut remainder = value.to_string();
@@ -188,7 +191,7 @@ impl Bencode {
             }),
 
             // Not Bencode
-            _ => bail!("unknown value provided"),
+            _ => Err(Error::InvalidType("Invalid type provided".to_string())),
         }
     }
 
@@ -211,7 +214,7 @@ impl Bencode {
     /// let bencode = Bencode::from_bytes(&bencode_bytes).unwrap();
     /// assert_eq!(bencode.to_string(), "42");
     /// ```
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
         let (tag, value) = (&bytes[0], &bytes[1..]);
 
         match *tag {
@@ -219,11 +222,19 @@ impl Bencode {
             b'0'..=b'9' => {
                 let (len, rest) = match bytes.iter().position(|pos| *pos == b':') {
                     Some(pos) => (&bytes[..pos], &bytes[pos + 1..]),
-                    None => bail!("Invalid string bencode format: missing ':'"),
+                    None => {
+                        return Err(Error::InvalidType(
+                            "Invalid string bencode format: missing ':'".to_string(),
+                        ))
+                    }
                 };
 
-                let len = std::str::from_utf8(len)?;
-                let len: usize = len.parse()?;
+                let len = std::str::from_utf8(len)
+                    .map_err(|_| Error::InvalidValue("Bytes are not valid utf8".to_string()))?;
+
+                let len: usize = len.parse().map_err(|_| {
+                    Error::InvalidType("Unable to parse length of the string".to_string())
+                })?;
 
                 let (string, remainder) = (&rest[..len], &rest[len..]);
 
@@ -245,11 +256,19 @@ impl Bencode {
             b'i' => {
                 let (integer, remainder) = match value.iter().position(|p| *p == b'e') {
                     Some(pos) => (&value[..pos], &value[pos + 1..]),
-                    None => bail!("Cannot find the end tag of the Integer"),
+                    None => {
+                        return Err(Error::InvalidType(
+                            "Cannot find the end tag of the Integer".to_string(),
+                        ))
+                    }
                 };
 
-                let integer = String::from_utf8(integer.to_vec())?;
-                let integer = integer.parse::<isize>()?;
+                let integer = String::from_utf8(integer.to_vec())
+                    .map_err(|_| Error::InvalidValue("Bytes are not valid utf8".to_string()))?;
+
+                let integer = integer
+                    .parse::<isize>()
+                    .map_err(|_| Error::InvalidType("Unable to parse as integer".to_string()))?;
 
                 Ok(Bencode {
                     bencode: Value::Integer(integer),
@@ -313,7 +332,7 @@ impl Bencode {
                 byte_remainder: Vec::new(),
             }),
 
-            _ => bail!("Not a bencode value"),
+            _ => Err(Error::InvalidType("Invalid type provided".to_string())),
         }
     }
 
@@ -402,7 +421,7 @@ impl Bencode {
     /// let json_value = bencode.to_json().unwrap();
     /// assert_eq!(json_value, serde_json::json!({"key": "val"}));
     /// ```
-    pub fn to_json(&self) -> Result<serde_json::Value> {
+    pub fn to_json(&self) -> anyhow::Result<serde_json::Value> {
         Ok(serde_json::to_value(&self.bencode)?)
     }
 
@@ -419,7 +438,7 @@ impl Bencode {
     /// let json_string = bencode.to_json_pretty().unwrap();
     /// assert_eq!(json_string, "{\n  \"key\": \"val\"\n}");
     /// ```
-    pub fn to_json_pretty(&self) -> Result<String> {
+    pub fn to_json_pretty(&self) -> anyhow::Result<String> {
         let value = self.to_json()?;
         Ok(serde_json::to_string_pretty(&value)?)
     }
@@ -455,40 +474,40 @@ impl Bencode {
     ///     )
     /// );
     /// ```
-    pub fn to_yaml_value(&self) -> Result<serde_yaml::Value> {
+    pub fn to_yaml_value(&self) -> anyhow::Result<serde_yaml::Value> {
         Ok(serde_yaml::to_value(&self.bencode)?)
     }
 
-    pub fn to_yaml_string(&self) -> Result<String> {
+    pub fn to_yaml_string(&self) -> anyhow::Result<String> {
         Ok(serde_yaml::to_string(&self.bencode)?)
     }
 
-    pub fn to_toml_string(&self) -> Result<String> {
+    pub fn to_toml_string(&self) -> anyhow::Result<String> {
         Ok(toml::to_string_pretty(&self.bencode)?)
     }
 
-    pub fn deserialize_into<'a, T>(bytes: &'a [u8]) -> Result<T, bencode::error::Error>
+    pub fn deserialize_into<'a, T>(bytes: &'a [u8]) -> anyhow::Result<T, bencode::error::Error>
     where
         T: Deserialize<'a>,
     {
         bencode::deser::from_bytes(bytes)
     }
 
-    pub fn serialize_to_string<T>(value: &T) -> Result<String, bencode::error::Error>
+    pub fn serialize_to_string<T>(value: &T) -> anyhow::Result<String, bencode::error::Error>
     where
         T: Serialize,
     {
         ser::to_string(value)
     }
 
-    pub fn serialize_to_bytes<T>(value: &T) -> Result<Vec<u8>, bencode::error::Error>
+    pub fn serialize_to_bytes<T>(value: &T) -> anyhow::Result<Vec<u8>, bencode::error::Error>
     where
         T: Serialize,
     {
         ser::to_bencode_bytes(value)
     }
 
-    pub fn serialize_to_self<T>(value: &T) -> Result<Self, bencode::error::Error>
+    pub fn serialize_to_self<T>(value: &T) -> anyhow::Result<Self, bencode::error::Error>
     where
         T: Serialize,
     {
