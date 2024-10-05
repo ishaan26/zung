@@ -929,6 +929,17 @@ mod tests {
     }
 
     #[test]
+    fn test_missing_colon() {
+        let bencode_string = "5hello".as_bytes(); // Missing key-value pair structure
+        let result = Bencode::from_bytes(bencode_string);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Invalid string bencode format: missing ':'"
+        );
+    }
+
+    #[test]
     fn test_invalid_utf8_bytes() {
         let invalid_utf8_bytes = vec![0x80, 0x80]; // Invalid UTF-8 sequence
         let result = Bencode::from_bytes(&invalid_utf8_bytes);
