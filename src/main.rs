@@ -1,5 +1,8 @@
+use anyhow::Result;
 use clap::{Parser, Subcommand};
+
 use zung_mini::MiniArgs;
+use zung_parsers::ParsersArgs;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None, styles=get_styles())] // Read from `Cargo.toml`
@@ -12,14 +15,18 @@ struct Cli {
 enum Commands {
     /// Mini projects implemented in rust
     Mini(MiniArgs),
+    Parsers(ParsersArgs),
 }
 
-fn main() {
+fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.commands {
         Commands::Mini(mini_args) => mini_args.run(),
+        Commands::Parsers(parsers_args) => parsers_args.run()?,
     }
+
+    Ok(())
 }
 
 fn get_styles() -> clap::builder::Styles {
