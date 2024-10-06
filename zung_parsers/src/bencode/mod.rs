@@ -1,5 +1,6 @@
 mod deser;
 mod error;
+mod parsers;
 mod ser;
 
 use std::{collections::HashMap, fmt::Display};
@@ -36,8 +37,7 @@ use crate::bencode::error::{Error, Result};
 #[derive(Debug)]
 pub struct Bencode {
     bencode: Value,
-    str_remainder: String,
-    byte_remainder: Vec<u8>,
+    remainder: Vec<u8>,
 }
 
 /// An enum representing various data types used in Bencode encoding.
@@ -64,142 +64,6 @@ pub enum Value {
 }
 
 impl Bencode {
-    /// Parses a Bencode-encoded string and returns a `Bencode` instance.
-    ///
-    /// # Arguments
-    ///
-    /// * `pattern` - A string or a value that can be converted to a string using the `ToString`
-    ///    trait, representing the Bencode-encoded data.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<Self, Error>` - Returns a `Bencode` instance on success or an `Error` on failure.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use zung_parsers::bencode::Bencode;
-    ///
-    /// let bencode_string = "i42e";
-    /// let bencode = Bencode::from_string(bencode_string).unwrap();
-    /// assert_eq!(bencode.to_string(), "42");
-    ///
-    /// let bencode_string = "l5:hello4:from4:rust7:bencode";
-    /// let bencode = Bencode::from_string(bencode_string).unwrap();
-    ///
-    /// assert_eq!(bencode.to_string(), "[hello, from, rust, bencode]");
-    /// ```
-    pub fn from_string(pattern: impl ToString) -> Result<Self> {
-        let pattern = pattern.to_string();
-        let (tag, value) = pattern.split_at(1);
-        let tag = tag.chars().next().unwrap();
-
-        match tag {
-            // Strings
-            '0'..='9' => match pattern.split_once(':') {
-                Some((len, string)) => {
-                    let len = len.parse::<usize>().unwrap_or_else(|e| {
-                        panic!("Cannot parse the string: {} due to {e}", string)
-                    });
-
-                    if let Some(s) = string.get(..len) {
-                        Ok(Bencode {
-                            bencode: Value::String(s.to_string()),
-                            str_remainder: string[len..].to_string(),
-                            byte_remainder: Vec::new(),
-                        })
-                    } else {
-                        Err(Error::InvalidValue(
-                            "Invalid encoding of string value".to_string(),
-                        ))
-                    }
-                }
-                None => Err(Error::InvalidType("Invalid type provided".to_string())),
-            },
-
-            // Integers
-            'i' => {
-                if let Some((integer, rest)) = value.split_once('e') {
-                    let integer = integer.parse::<isize>().unwrap_or_else(|e| {
-                        panic!("Cannot parse the integer: {} due to {e}", integer)
-                    });
-
-                    Ok(Bencode {
-                        bencode: Value::Integer(integer),
-                        str_remainder: rest.to_string(),
-                        byte_remainder: Vec::new(),
-                    })
-                } else {
-                    Err(Error::InvalidValue(
-                        "Invalid encoding of integer value".to_string(),
-                    ))
-                }
-            }
-
-            // Lists
-            'l' => {
-                let mut list = Vec::new();
-
-                let mut remainder = value.to_string();
-
-                while !remainder.is_empty() && !remainder.starts_with('e') {
-                    let bencode = Bencode::from_string(remainder)?;
-                    list.push(bencode.bencode);
-                    remainder = bencode.str_remainder;
-                }
-
-                if let Some(string) = remainder.strip_prefix('e') {
-                    remainder = string.to_string();
-                }
-
-                Ok(Bencode {
-                    bencode: Value::List(list),
-                    str_remainder: remainder,
-                    byte_remainder: Vec::new(),
-                })
-            }
-
-            // Dictionaries
-            'd' => {
-                let mut dictionary = HashMap::new();
-
-                let mut remainder = value.to_string();
-
-                while !remainder.is_empty() && !remainder.starts_with('e') {
-                    let k = Bencode::from_string(remainder)?;
-
-                    if k.str_remainder.is_empty() {
-                        return Err(Error::InvalidValue("Invalid Dictionary format".to_string()));
-                    }
-
-                    let v = Bencode::from_string(k.str_remainder)?;
-                    dictionary.insert(k.bencode.to_string(), v.bencode);
-                    remainder = v.str_remainder;
-                }
-
-                if let Some(string) = remainder.strip_prefix('e') {
-                    remainder = string.to_string();
-                }
-
-                Ok(Bencode {
-                    bencode: Value::Dictionary(dictionary),
-                    str_remainder: remainder,
-                    byte_remainder: Vec::new(),
-                })
-            }
-
-            // Null value
-            'n' => Ok(Bencode {
-                bencode: Value::Null,
-                str_remainder: String::new(),
-                byte_remainder: Vec::new(),
-            }),
-
-            // Not Bencode
-            _ => Err(Error::InvalidType("Invalid type provided".to_string())),
-        }
-    }
-
     /// Parses a Bencode-encoded byte slice and returns a `Bencode` instance.
     ///
     /// # Arguments
@@ -246,13 +110,11 @@ impl Bencode {
                 match String::from_utf8(string.to_vec()) {
                     Ok(string) => Ok(Bencode {
                         bencode: Value::String(string),
-                        str_remainder: String::new(),
-                        byte_remainder: remainder.to_vec(),
+                        remainder: remainder.to_vec(),
                     }),
                     Err(_) => Ok(Bencode {
                         bencode: Value::Bytes(string.to_vec()),
-                        str_remainder: String::new(),
-                        byte_remainder: remainder.to_vec(),
+                        remainder: remainder.to_vec(),
                     }),
                 }
             }
@@ -277,8 +139,7 @@ impl Bencode {
 
                 Ok(Bencode {
                     bencode: Value::Integer(integer),
-                    str_remainder: String::new(),
-                    byte_remainder: remainder.to_vec(),
+                    remainder: remainder.to_vec(),
                 })
             }
 
@@ -292,7 +153,7 @@ impl Bencode {
                 while !remainder.is_empty() && remainder[0] != b'e' {
                     let bencode = Bencode::from_bytes(&remainder)?;
                     list.push(bencode.bencode);
-                    remainder = bencode.byte_remainder;
+                    remainder = bencode.remainder;
                 }
 
                 if remainder.len() > 1 && remainder[0] == b'e' {
@@ -301,8 +162,7 @@ impl Bencode {
 
                 Ok(Bencode {
                     bencode: Value::List(list),
-                    str_remainder: String::new(),
-                    byte_remainder: remainder,
+                    remainder,
                 })
             }
 
@@ -315,14 +175,14 @@ impl Bencode {
                 while !remainder.is_empty() && remainder[0] != b'e' {
                     let k = Bencode::from_bytes(&remainder)?;
 
-                    if k.byte_remainder.is_empty() {
+                    if k.remainder.is_empty() {
                         return Err(Error::InvalidValue("Invalid Dictionary format".to_string()));
                     }
 
-                    let v = Bencode::from_bytes(&k.byte_remainder)?;
+                    let v = Bencode::from_bytes(&k.remainder)?;
                     dictionary.insert(k.bencode.to_string(), v.bencode);
 
-                    remainder = v.byte_remainder;
+                    remainder = v.remainder;
                 }
 
                 if remainder.len() > 1 && remainder[0] == b'e' {
@@ -331,16 +191,14 @@ impl Bencode {
 
                 Ok(Bencode {
                     bencode: Value::Dictionary(dictionary),
-                    str_remainder: String::new(),
-                    byte_remainder: remainder,
+                    remainder,
                 })
             }
 
             // Null value
             b'n' => Ok(Bencode {
                 bencode: Value::Null,
-                str_remainder: String::new(),
-                byte_remainder: Vec::new(),
+                remainder: Vec::new(),
             }),
 
             _ => Err(Error::InvalidType("Invalid type provided".to_string())),
@@ -600,7 +458,7 @@ impl Eq for Bencode {}
 
 impl From<&str> for Bencode {
     fn from(value: &str) -> Self {
-        match Self::from_string(value) {
+        match Self::from_bytes(value.as_bytes()) {
             Ok(bencode) => bencode,
             Err(e) => panic!("cannot construct a bencode value due to: {e}"),
         }
@@ -609,7 +467,7 @@ impl From<&str> for Bencode {
 
 impl From<String> for Bencode {
     fn from(value: String) -> Self {
-        match Self::from_string(value) {
+        match Self::from_bytes(value.as_bytes()) {
             Ok(bencode) => bencode,
             Err(e) => panic!("cannot construct a bencode value due to: {e}"),
         }
@@ -664,131 +522,6 @@ impl From<Bytes> for Bencode {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_string_bencode() {
-        let bencode = Bencode::from_string("4:spam").unwrap();
-        assert_eq!(bencode.bencode, Value::String("spam".to_string()));
-        assert_eq!(bencode.str_remainder, "".to_string());
-        assert_eq!(bencode.to_bencode_string(), "4:spam".to_string());
-    }
-
-    #[test]
-    fn test_integer_bencode() {
-        let bencode = Bencode::from_string("i3e").unwrap();
-        assert_eq!(bencode.bencode, Value::Integer(3));
-        assert_eq!(bencode.str_remainder, "".to_string());
-        assert_eq!(bencode.to_bencode_string(), "i3e".to_string());
-    }
-
-    #[test]
-    fn test_list_bencode() {
-        let bencode = Bencode::from_string("l4:spam4:eggsi3e5:braine").unwrap();
-        assert_eq!(
-            bencode.bencode,
-            Value::List(vec![
-                Value::String("spam".to_string()),
-                Value::String("eggs".to_string()),
-                Value::Integer(3),
-                Value::String("brain".to_string())
-            ])
-        );
-        assert_eq!(bencode.str_remainder, "".to_string());
-        assert_eq!(
-            bencode.to_bencode_string(),
-            "l4:spam4:eggsi3e5:braine".to_string()
-        );
-    }
-
-    #[test]
-    fn test_dictionary_bencode() {
-        let bencode = Bencode::from_string("d3:cow3:moo4:spam4:eggse").unwrap();
-        let mut dictionary = HashMap::new();
-        dictionary.insert("cow".to_string(), Value::String("moo".to_string()));
-        dictionary.insert("spam".to_string(), Value::String("eggs".to_string()));
-        assert_eq!(bencode.bencode, Value::Dictionary(dictionary));
-        assert_eq!(bencode.str_remainder, "".to_string());
-    }
-
-    #[test]
-    fn test_null_bencode() {
-        let bencode = Bencode::from_string("n").unwrap();
-        assert_eq!(bencode.bencode, Value::Null);
-        assert_eq!(bencode.str_remainder, "".to_string());
-        assert_eq!(bencode.to_bencode_string(), "n".to_string());
-    }
-
-    #[test]
-    fn test_invalid_bencode() {
-        let bencode = Bencode::from_string("x");
-        assert!(bencode.is_err());
-    }
-
-    #[test]
-    fn test_to_json() {
-        let bencode = Bencode::from_string("d3:cow3:moo4:spam4:eggse").unwrap();
-        let json_value = bencode.to_json().unwrap();
-        let expected_json: serde_json::Value = serde_json::json!({
-            "cow": "moo",
-            "spam": "eggs"
-        });
-        assert_eq!(json_value, expected_json);
-    }
-
-    #[test]
-    fn test_empty_string_bencode() {
-        let bencode = Bencode::from_string("0:").unwrap();
-        assert_eq!(bencode.bencode, Value::String("".to_string()));
-        assert_eq!(bencode.str_remainder, "".to_string());
-        assert_eq!(bencode.to_bencode_string(), "0:".to_string());
-    }
-
-    #[test]
-    fn test_large_integer_bencode() {
-        let bencode = Bencode::from_string("i9223372036854775807e").unwrap();
-        assert_eq!(bencode.bencode, Value::Integer(9223372036854775807));
-        assert_eq!(bencode.str_remainder, "".to_string());
-        assert_eq!(
-            bencode.to_bencode_string(),
-            "i9223372036854775807e".to_string()
-        );
-    }
-
-    #[test]
-    fn test_negative_integer_bencode() {
-        let bencode = Bencode::from_string("i-42e").unwrap();
-        assert_eq!(bencode.bencode, Value::Integer(-42));
-        assert_eq!(bencode.str_remainder, "".to_string());
-        assert_eq!(bencode.to_bencode_string(), "i-42e".to_string());
-    }
-
-    #[test]
-    fn test_empty_list_bencode() {
-        let bencode = Bencode::from_string("le").unwrap();
-        assert_eq!(bencode.bencode, Value::List(vec![]));
-        assert_eq!(bencode.str_remainder, "".to_string());
-        assert_eq!(bencode.to_bencode_string(), "le".to_string());
-    }
-
-    #[test]
-    fn test_empty_dictionary_bencode() {
-        let bencode = Bencode::from_string("de").unwrap();
-        assert_eq!(bencode.bencode, Value::Dictionary(HashMap::new()));
-        assert_eq!(bencode.str_remainder, "".to_string());
-        assert_eq!(bencode.to_bencode_string(), "de".to_string());
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_invalid_integer_bencode() {
-        let _ = Bencode::from_string("i4re");
-    }
-
-    #[test]
-    fn test_invalid_string_bencode() {
-        let bencode = Bencode::from_string("4:abc");
-        assert!(bencode.is_err());
-    }
 
     #[test]
     fn test_from_bytes_strings() {
@@ -874,61 +607,6 @@ mod tests {
     }
 
     #[test]
-    fn test_to_yaml() {
-        let bencode = Bencode::from_string("d3:key3:vale").unwrap();
-        let yaml_value = bencode.to_yaml_value().unwrap();
-        assert_eq!(
-            yaml_value,
-            serde_yaml::Value::Mapping(
-                vec![(
-                    serde_yaml::Value::String("key".to_string()),
-                    serde_yaml::Value::String("val".to_string())
-                )]
-                .into_iter()
-                .collect()
-            )
-        );
-    }
-
-    #[test]
-    fn test_invalid_string_encoding() {
-        let bencode_string = "5test"; // Missing ':' to indicate string length
-        let result = Bencode::from_string(bencode_string);
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err().to_string(), "Invalid type provided");
-    }
-
-    #[test]
-    fn test_invalid_integer_encoding() {
-        let bencode_string = "i42"; // Missing 'e' to end integer
-        let result = Bencode::from_string(bencode_string);
-        assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "Invalid encoding of integer value"
-        );
-    }
-
-    #[test]
-    fn test_invalid_list_encoding() {
-        let bencode_string = "li42"; // Missing 'e' to end list
-        let result = Bencode::from_string(bencode_string);
-        assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "Invalid encoding of integer value"
-        );
-    }
-
-    #[test]
-    fn test_invalid_dictionary_encoding() {
-        let bencode_string = "di42e"; // Missing key-value pair structure
-        let result = Bencode::from_string(bencode_string);
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err().to_string(), "Invalid Dictionary format");
-    }
-
-    #[test]
     fn test_missing_colon() {
         let bencode_string = "5hello".as_bytes(); // Missing key-value pair structure
         let result = Bencode::from_bytes(bencode_string);
@@ -963,32 +641,5 @@ mod tests {
         let bencode_bytes = vec![b'l', b'i', b'4', b'2']; // Missing 'e' at the end
         let result = Bencode::from_bytes(&bencode_bytes);
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_invalid_bencode_type() {
-        let bencode_string = "x42"; // Invalid type 'x'
-        let result = Bencode::from_string(bencode_string);
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err().to_string(), "Invalid type provided");
-    }
-
-    #[test]
-    fn test_invalid_string_length() {
-        let bencode_string = "10:test"; // Length mismatch: says 10, but only 4 characters provided
-        let result = Bencode::from_string(bencode_string);
-        assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "Invalid encoding of string value"
-        );
-    }
-
-    #[test]
-    fn test_invalid_key_in_dictionary() {
-        let bencode_string = "di42e"; // Invalid key type (integer instead of string)
-        let result = Bencode::from_string(bencode_string);
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err().to_string(), "Invalid Dictionary format");
     }
 }

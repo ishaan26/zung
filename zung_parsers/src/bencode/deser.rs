@@ -46,8 +46,8 @@ where
 
 #[derive(Debug)]
 enum ParseResult {
-    Integer(i64),
     Bytes(Vec<u8>),
+    Integer(i64),
     List,
     Map,
     End,
