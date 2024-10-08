@@ -63,7 +63,7 @@ impl<'a> Bencode<'a> {
                 let value = self.parse_dictionary()?;
                 Ok(Value::Dictionary(value))
             }
-            t => bail!("Invalid bencode format: {t}"),
+            _ => bail!("Invalid bencode format"),
         }
     }
 
@@ -114,7 +114,7 @@ impl<'a> Bencode<'a> {
 
         // Handle leading zeros (only '0' is allowed to start with zero, otherwise it's invalid)
         if int_bytes.starts_with(b"0") && int_bytes.len() > 1 {
-            bail!("Invalid integer bencode format: leading zeros");
+            bail!("Invalid integer bencode integer format: leading zeros");
         }
 
         // Apply the negative sign if necessary
@@ -156,7 +156,10 @@ impl<'a> Bencode<'a> {
                     //   •	acc = 12: after the third byte (b'3'), it becomes acc = 12 * 10 + 3 = 123.
                     Ok(acc * 10 + (byte - b'0') as usize)
                 } else {
-                    bail!("Non Digit character found in the length of the string: {byte}")
+                    bail!(
+                        "Non Digit character found in the length of the string: '{}'",
+                        String::from_utf8([*byte].to_vec())?
+                    )
                 }
             })?;
 
@@ -182,16 +185,11 @@ impl<'a> Bencode<'a> {
             list.push(self.parse()?);
         }
 
-        // Ensure there is an 'e' tag to consume
-        if self.input.is_empty() {
-            bail!("Unexpected EOF, missing list end character 'e'");
-        }
-
         // eat the 'e' tag
         if self.input.first() == Some(&b'e') {
             self.input = &self.input[1..];
         } else {
-            bail!("Invalid dictionary format: missing 'e'");
+            bail!("Invalid list format: missing 'e'");
         }
 
         Ok(list)
@@ -240,6 +238,13 @@ mod tests {
             "Invalid string bencode format: length is higher than the remaining bytes",
             bencode_err.unwrap_err().to_string()
         );
+
+        let bencode_err = Bencode::from_bytes(b"1d0:hello");
+        assert!(bencode_err.is_err());
+        assert_eq!(
+            "Non Digit character found in the length of the string: 'd'",
+            bencode_err.unwrap_err().to_string()
+        );
     }
 
     #[test]
@@ -247,10 +252,27 @@ mod tests {
         let bencode = Bencode::from_bytes(b"i21e").unwrap();
         assert_eq!(Value::Integer(21), bencode);
 
+        let bencode = Bencode::from_bytes(b"i-21e").unwrap();
+        assert_eq!(Value::Integer(-21), bencode);
+
         let bencode_err = Bencode::from_bytes(b"i32je");
         assert!(bencode_err.is_err());
         assert_eq!(
             "Invalid character in bencode integer",
+            bencode_err.unwrap_err().to_string()
+        );
+
+        let bencode_err = Bencode::from_bytes(b"ie");
+        assert!(bencode_err.is_err());
+        assert_eq!(
+            "Invalid integer bencode format: empty integer",
+            bencode_err.unwrap_err().to_string()
+        );
+
+        let bencode_err = Bencode::from_bytes(b"i004e");
+        assert!(bencode_err.is_err());
+        assert_eq!(
+            "Invalid integer bencode integer format: leading zeros",
             bencode_err.unwrap_err().to_string()
         );
     }
@@ -271,8 +293,45 @@ mod tests {
         let bencode_err = Bencode::from_bytes(b"li32ei42ei52e5:hello");
         assert!(bencode_err.is_err());
         assert_eq!(
-            "Unexpected EOF, missing list end character 'e'",
+            "Invalid list format: missing 'e'",
             bencode_err.unwrap_err().to_string()
+        );
+    }
+
+    #[test]
+    fn test_dictionary_bencode() {
+        let bencode = Bencode::from_string("d3:cow3:moo4:spam4:eggse").unwrap();
+        let mut dictionary = HashMap::new();
+        dictionary.insert("cow".to_string(), Value::String("moo".to_string()));
+        dictionary.insert("spam".to_string(), Value::String("eggs".to_string()));
+        assert_eq!(bencode, Value::Dictionary(dictionary));
+
+        let bencode_err = Bencode::from_string("di2e3:moo4:spam4:eggse");
+        assert!(bencode_err.is_err());
+        assert_eq!(
+            "Only string values are allowed as dictionary keys",
+            bencode_err.unwrap_err().to_string()
+        );
+    }
+
+    #[test]
+    fn invalid_becode() {
+        let bencode_err = Bencode::from_string("werd");
+
+        assert!(bencode_err.is_err());
+        assert_eq!(
+            "Invalid bencode format",
+            bencode_err.unwrap_err().to_string()
+        );
+    }
+
+    #[test]
+    fn test_empty_input() {
+        let bencode = Bencode::from_string("");
+        assert!(bencode.is_err());
+        assert_eq!(
+            "Unexpected end of input while parsing list",
+            bencode.unwrap_err().to_string()
         );
     }
 }
