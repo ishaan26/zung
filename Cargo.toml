@@ -15,5 +15,14 @@ resolver = "2"
 
 [dependencies]
 zung_mini = { version = "0.3.1", path = "./zung_mini" }
+zung_parsers = { version = "0.1.0", path = "./zung_parsers" }
+
 anstyle = "1.0.8"
 clap = { version = "4.5.18", features = ["derive"] }
+
+
+[profile.release]
+strip = true      # Automatically strip symbols from the binary.
+lto = true        # LTO instructs the linker to optimize at the link stage.
+codegen-units = 1 # to allow for maximum size reduction optimizations
+panic = "abort"   # rustc can be instructed to abort immediately rather than unwind.
