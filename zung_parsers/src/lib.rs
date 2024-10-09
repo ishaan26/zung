@@ -1,6 +1,5 @@
 pub mod bencode;
 
-use crate::bencode::*;
 use clap::{Args, Subcommand, ValueEnum};
 use std::{
     fs::File,
@@ -74,7 +73,7 @@ impl ParserArgs {
                     output,
                 } => {
                     let file = std::fs::read(file)?;
-                    let bencode = Bencode::from_bytes(&file)?;
+                    let bencode = bencode::to_value(&file)?;
 
                     let file = File::create(output)?;
                     let mut buf_writer = BufWriter::new(file);
@@ -90,7 +89,7 @@ impl ParserArgs {
                 }
 
                 BencodeCommands::Try { input } => {
-                    let bencode = Bencode::from_string(&input)?;
+                    let bencode = bencode::to_value(&input)?;
                     println!("{bencode:?}");
                 }
             },
