@@ -25,28 +25,28 @@ enum BencodeArgs {
 }
 
 #[derive(Clone, Subcommand, Debug)]
-#[command(arg_required_else_help = true)]
 enum BencodeCommands {
     /// Decode the bencode into a given format
     Decode {
         /// Decode in the provided format.       
-        #[arg(long, value_enum)]
+        #[arg(long, value_enum, required = true)]
         format: Format,
 
         /// The Bencode file to decode
-        #[arg(short, long)]
+        #[arg(short, long, required = true)]
         file: PathBuf,
 
         /// Path to output the decoded data format in.
-        #[arg(short, long)]
+        #[arg(short, long, required = true)]
         output: PathBuf,
     },
 
     /// Try decoding a String of bencode for testing purposes. This simply prints out the decoded
     /// data model.
     Try {
-        /// Pass a bencode string directly as an argument
-        input: String,
+        /// The Bencode file to decode
+        #[arg(short, long)]
+        file: Option<PathBuf>,
     },
 }
 
@@ -88,9 +88,31 @@ impl ParserArgs {
                     };
                 }
 
-                BencodeCommands::Try { input } => {
-                    let bencode = bencode::to_value(&input)?;
-                    println!("{bencode:?}");
+                BencodeCommands::Try { file } => {
+                    if let Some(file) = file {
+                        #[derive(
+                            serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq,
+                        )]
+                        struct TorrentRepr {
+                            announce: String,
+
+                            #[serde(rename = "announce-list")]
+                            announce_list: Option<Vec<Vec<String>>>,
+
+                            comment: Option<String>,
+
+                            #[serde(rename = "created by")]
+                            created_by: Option<String>,
+
+                            #[serde(rename = "creation date")]
+                            creation_date: Option<usize>,
+                        }
+
+                        let file = std::fs::read(file)?;
+
+                        let torrent: TorrentRepr = bencode::from_bytes(&file)?;
+                        println!("{torrent:#?}")
+                    }
                 }
             },
         }

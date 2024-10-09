@@ -1,12 +1,16 @@
+mod de;
 mod error;
 mod value;
 
+pub use de::{from_bytes, from_str};
 pub use error::{Error, Result};
 pub use value::Value;
 
 use std::{collections::HashMap, fmt::Display};
 use value::ValueInput;
 
+/// Parsed in string if string is passed in as the input. Parses in bytes if bytes are passed in as
+/// the input.
 pub fn to_value<'a, T>(input: T) -> Result<Value>
 where
     T: Into<ValueInput<'a>>,
@@ -43,15 +47,14 @@ where
 /// ## Examples
 ///
 /// ```rust
-/// use zung_parsers::bencode::Bencode;
+/// use zung_parsers::bencode;
 ///
 /// // Creating a Bencode instance from a bencode-encoded string
 /// let bencode_string = "i42e";
-/// let bencode = to_value(bencode_string).unwrap();
+/// let bencode = bencode::to_value(bencode_string).unwrap();
 ///
 /// println!("{bencode}"); // Prints "42"
 /// ```
-
 struct Bencode<'a> {
     input: &'a [u8],
     in_bytes: bool,
@@ -350,7 +353,7 @@ mod tests {
         let bencode_err = to_value(b"ie");
         assert!(bencode_err.is_err());
         assert_eq!(
-            "Invalid integer bencode format: empty integer",
+            "Invalid bencode integer format: empty integer",
             bencode_err.unwrap_err().to_string()
         );
 
@@ -391,7 +394,7 @@ mod tests {
         dictionary.insert("spam".to_string(), Value::String("eggs".to_string()));
         assert_eq!(bencode, Value::Dictionary(dictionary));
 
-        let bencode = to_value(b"d3:cow3:moo4:spam4:eggse").unwrap();
+        let bencode = to_value("d3:cow3:moo4:spam4:eggse").unwrap();
         let mut dictionary = HashMap::new();
         dictionary.insert("cow".to_string(), Value::String("moo".to_string()));
         dictionary.insert("spam".to_string(), Value::String("eggs".to_string()));
@@ -420,9 +423,6 @@ mod tests {
     fn test_empty_input() {
         let bencode = to_value("");
         assert!(bencode.is_err());
-        assert_eq!(
-            "Unexpected end of input while parsing list",
-            bencode.unwrap_err().to_string()
-        );
+        assert_eq!("End of stream", bencode.unwrap_err().to_string());
     }
 }
