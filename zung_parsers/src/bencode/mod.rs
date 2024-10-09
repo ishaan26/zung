@@ -1,9 +1,29 @@
 use core::str;
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Display};
 
 use anyhow::{anyhow, bail, Result};
 use serde::{Deserialize, Serialize};
 
+/// Encoding and decoding data in the [Bencode](https://en.wikipedia.org/wiki/Bencode) format.
+///
+/// Bencode is a simple binary encoding format used in various contexts, most notably in
+/// BitTorrent. This type provides functionality to encode Rust data structures into Bencode
+/// format and decode Bencode strings into Rust data structures or json or yaml. See the
+/// implemented methods for more information,
+///
+/// # Usage
+///
+/// ## Examples
+///
+/// ```rust
+/// use zung_parsers::bencode::Bencode;
+///
+/// // Creating a Bencode instance from a bencode-encoded string
+/// let bencode_string = "i42e";
+/// let bencode = Bencode::from_string(bencode_string).unwrap();
+///
+/// println!("{bencode}"); // Prints "42"
+/// ```
 pub struct Bencode<'a> {
     input: &'a [u8],
     in_bytes: bool,
@@ -220,6 +240,39 @@ impl<'a> Bencode<'a> {
         }
 
         Ok(dictionary)
+    }
+}
+
+impl Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Value::Null => write!(f, "Null"),
+            Value::Integer(i) => write!(f, "{i}"),
+            Value::Bytes(bytes) => match std::str::from_utf8(bytes) {
+                Ok(s) => write!(f, "{s}"),
+                Err(_) => write!(f, "/*BYTES*/"),
+            },
+            Value::String(s) => write!(f, "{s}"),
+            Value::List(list) => {
+                let mut benstr = String::new();
+                for (i, bencode) in list.iter().enumerate() {
+                    if i != list.len() - 1 {
+                        benstr.push_str(&format!("{}, ", bencode));
+                    } else {
+                        benstr.push_str(&bencode.to_string())
+                    }
+                }
+                write!(f, "[{benstr}]")
+            }
+            Value::Dictionary(dictionary) => {
+                let mut benstr = String::new();
+                for (k, v) in dictionary {
+                    benstr.push_str(&format!("{k} : "));
+                    benstr.push_str(&v.to_string());
+                }
+                write!(f, "[{benstr}]")
+            }
+        }
     }
 }
 
