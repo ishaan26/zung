@@ -81,3 +81,81 @@ impl Display for Value {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_value_integer() {
+        let value = Value::Integer(42);
+        assert_eq!(value.to_string(), "42");
+    }
+
+    #[test]
+    fn test_value_null() {
+        let value = Value::Null;
+        assert_eq!(value.to_string(), "Null");
+    }
+
+    #[test]
+    fn test_value_bytes_utf8() {
+        let value = Value::Bytes(vec![72, 101, 108, 108, 111]); // 'Hello'
+        assert_eq!(value.to_string(), "Hello");
+    }
+
+    #[test]
+    fn test_value_bytes_non_utf8() {
+        let value = Value::Bytes(vec![0, 159, 146, 150]); // Non-UTF8 bytes
+        assert_eq!(value.to_string(), "/*BYTES*/");
+    }
+
+    #[test]
+    fn test_value_string() {
+        let value = Value::String("Test".to_string());
+        assert_eq!(value.to_string(), "Test");
+    }
+
+    #[test]
+    fn test_value_list() {
+        let list = vec![
+            Value::Integer(1),
+            Value::Integer(2),
+            Value::String("three".to_string()),
+        ];
+        let value = Value::List(list);
+        assert_eq!(value.to_string(), "[1, 2, three]");
+    }
+
+    #[test]
+    fn test_value_dictionary() {
+        let mut dict = HashMap::new();
+        dict.insert("key1".to_string(), Value::Integer(10));
+        dict.insert("key2".to_string(), Value::String("value".to_string()));
+        let value = Value::Dictionary(dict);
+
+        let result = value.to_string();
+        assert!(result.contains("key1 : 10"));
+        assert!(result.contains("key2 : value"));
+    }
+
+    #[test]
+    fn test_valueinput_str() {
+        let input: ValueInput = "test".into();
+        if let ValueInput::Str(s) = input {
+            assert_eq!(s, "test");
+        } else {
+            panic!("Expected ValueInput::Str");
+        }
+    }
+
+    #[test]
+    fn test_valueinput_array() {
+        let input: ValueInput = (&[1, 2, 3]).into();
+        if let ValueInput::Bytes(bytes) = input {
+            assert_eq!(bytes, &[1, 2, 3]);
+        } else {
+            panic!("Expected ValueInput::Bytes");
+        }
+    }
+}
