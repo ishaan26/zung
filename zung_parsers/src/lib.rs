@@ -6,9 +6,18 @@ use std::path::PathBuf;
 
 #[derive(Debug, Args)]
 #[command(flatten_help = true, subcommand_required = true)]
-pub struct BencodeArgs {
+pub struct ParserArgs {
     #[command(subcommand)]
-    command: BencodeCommands,
+    command: BencodeArgs,
+}
+
+#[derive(Debug, Subcommand)]
+#[command(flatten_help = true, subcommand_required = true)]
+enum BencodeArgs {
+    Bencode {
+        #[command(subcommand)]
+        commands: BencodeCommands,
+    },
 }
 
 #[derive(Clone, Subcommand, Debug)]
@@ -27,21 +36,23 @@ enum BencodeCommands {
     },
 }
 
-impl BencodeArgs {
-    pub fn run_bencode(self) -> anyhow::Result<()> {
+impl ParserArgs {
+    pub fn run(self) -> anyhow::Result<()> {
         // Run the commands
         match self.command {
-            BencodeCommands::Decode { file } => {
-                let file = std::fs::read(file)?;
-                let bencode = Bencode::from_bytes(&file)?;
+            BencodeArgs::Bencode { commands } => match commands {
+                BencodeCommands::Decode { file } => {
+                    let file = std::fs::read(file)?;
+                    let bencode = Bencode::from_bytes(&file)?;
 
-                println!("{bencode:#?}");
-            }
+                    println!("{bencode:#?}");
+                }
 
-            BencodeCommands::Try { input } => {
-                let bencode = Bencode::from_string(&input)?;
-                println!("{bencode:?}");
-            }
+                BencodeCommands::Try { input } => {
+                    let bencode = Bencode::from_string(&input)?;
+                    println!("{bencode:?}");
+                }
+            },
         }
         Ok(())
     }

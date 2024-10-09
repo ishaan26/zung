@@ -306,6 +306,12 @@ mod tests {
         dictionary.insert("spam".to_string(), Value::String("eggs".to_string()));
         assert_eq!(bencode, Value::Dictionary(dictionary));
 
+        let bencode = Bencode::from_bytes(b"d3:cow3:moo4:spam4:eggse").unwrap();
+        let mut dictionary = HashMap::new();
+        dictionary.insert("cow".to_string(), Value::String("moo".to_string()));
+        dictionary.insert("spam".to_string(), Value::String("eggs".to_string()));
+        assert_eq!(bencode, Value::Dictionary(dictionary));
+
         let bencode_err = Bencode::from_string("di2e3:moo4:spam4:eggse");
         assert!(bencode_err.is_err());
         assert_eq!(
