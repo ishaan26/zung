@@ -41,6 +41,21 @@ enum BencodeCommands {
         output: PathBuf,
     },
 
+    /// Encode to bencode from given format
+    Encode {
+        /// Decode in the provided format.       
+        #[arg(long, value_enum, required = true)]
+        format: Format,
+
+        /// File containing the format data
+        #[arg(short, long, required = true)]
+        file: PathBuf,
+
+        /// Path to output the decoded data format in.
+        #[arg(short, long, required = true)]
+        output: PathBuf,
+    },
+
     /// Try decoding a String of bencode for testing purposes. This simply prints out the decoded
     /// data model.
     Try {
@@ -73,11 +88,10 @@ impl ParserArgs {
                     output,
                 } => {
                     let file = std::fs::read(file)?;
-                    let bencode = bencode::to_value(&file)?;
+                    let bencode = bencode::parse(&file)?;
 
                     let file = File::create(output)?;
                     let mut buf_writer = BufWriter::new(file);
-
                     match format {
                         Format::Json => serde_json::to_writer_pretty(buf_writer, &bencode)?,
                         Format::Yaml => serde_yaml::to_writer(buf_writer, &bencode)?,
@@ -85,6 +99,31 @@ impl ParserArgs {
                             let b = toml::to_string_pretty(&bencode)?;
                             buf_writer.write_all(b.as_bytes())?;
                         }
+                    };
+                }
+
+                BencodeCommands::Encode {
+                    format,
+                    file,
+                    output,
+                } => {
+                    let file_read = std::fs::read(file)?;
+
+                    let file_write = File::create(output)?;
+                    let mut buf_writer = BufWriter::new(file_write);
+
+                    match format {
+                        Format::Json => {
+                            let value: serde_json::Value = serde_json::from_slice(&file_read)?;
+                            let bencode = bencode::to_string(&value)?;
+                            write!(buf_writer, "{bencode}")?
+                        }
+                        Format::Yaml => {
+                            let value: serde_yaml::Value = serde_yaml::from_slice(&file_read)?;
+                            let bencode = bencode::to_string(&value)?;
+                            write!(buf_writer, "{bencode}")?
+                        }
+                        Format::Toml => unimplemented!(),
                     };
                 }
 

@@ -15,7 +15,7 @@ enum Commands {
     /// Mini projects implemented in rust
     Mini(MiniArgs),
 
-    // Parsers for different data formats
+    /// Parsers for different data formats
     Parsers(ParserArgs),
 }
 
