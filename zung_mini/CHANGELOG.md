@@ -2,7 +2,7 @@
 
 All notable changes to Zung_mini will be documented in this file.
 
-## [zung_mini-v0.3.0] - 2024-10-02
+## [zung_mini-v0.3.1] - 2024-10-02
 
 ### 🚀 Features
 
