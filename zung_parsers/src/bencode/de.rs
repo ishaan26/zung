@@ -29,20 +29,86 @@ impl<'de> Deserializer<'de> {
 // By convention, the public API of a Serde deserializer is one or more
 // `from_xyz` methods such as `from_str`, `from_bytes`, or `from_reader`
 // depending on what Rust types the deserializer is able to consume as input.
-pub fn from_str<'a, T>(s: &'a str) -> Result<T>
+
+/// Deserializes a bencode-encoded string into a value of type `T`.
+///
+/// This function takes a string slice containing bencode-encoded data and attempts to
+/// deserialize it into a value of type `T`, which must implement the `Deserialize` trait.
+///
+/// # Type Parameters
+///
+/// * `T` - The type to deserialize into. This type must implement the `Deserialize` trait.
+///
+///
+/// # Examples
+///
+/// ```rust
+/// use zung_parsers::bencode;
+/// use serde::Deserialize;
+///
+/// #[derive(Deserialize, Debug, PartialEq)]
+/// struct Person {
+///     name: String,
+///     age: i32,
+/// }
+///
+/// let bencode_str = "d4:name5:Alice3:agei30ee";
+/// let person: Person = bencode::from_str(bencode_str).unwrap();
+/// assert_eq!(person, Person { name: "Alice".to_string(), age: 30 });
+/// ```
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// * The input string is not valid bencode.
+/// * The bencode structure doesn't match the structure of type `T`.
+/// * Any other deserialization error occurs.
+pub fn from_str<'a, T>(string: &'a str) -> Result<T>
 where
     T: Deserialize<'a>,
 {
-    let mut deserializer = Deserializer::from_str(s);
+    let mut deserializer = Deserializer::from_str(string);
     let t = T::deserialize(&mut deserializer)?;
     Ok(t)
 }
 
-pub fn from_bytes<'a, T>(b: &'a [u8]) -> Result<T>
+/// Deserializes bencode-encoded bytes into a value of type `T`.
+///
+/// This function takes a byte slice containing bencode-encoded data and attempts to deserialize it
+/// into a value of type `T`, which must implement the `Deserialize` trait.
+///
+/// # Type Parameters
+///
+/// * `T` - The type to deserialize into. This type must implement the `Deserialize` trait.
+///
+/// # Examples
+///
+/// ```rust
+/// use zung_parsers::bencode;
+/// use serde::Deserialize;
+///
+/// #[derive(Deserialize, Debug, PartialEq)]
+/// struct Person {
+///     name: String,
+///     age: i32,
+/// }
+///
+/// let bencode_bytes = b"d4:name5:Alice3:agei30ee";
+/// let person: Person = bencode::from_bytes(bencode_bytes).unwrap();
+/// assert_eq!(person, Person { name: "Alice".to_string(), age: 30 });
+/// ```
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// * The input bytes are not valid bencode.
+/// * The bencode structure doesn't match the structure of type `T`.
+/// * Any other deserialization error occurs.
+pub fn from_bytes<'a, T>(bytes: &'a [u8]) -> Result<T>
 where
     T: Deserialize<'a>,
 {
-    let mut deserializer = Deserializer::from_bytes(b);
+    let mut deserializer = Deserializer::from_bytes(bytes);
     let t = T::deserialize(&mut deserializer)?;
     Ok(t)
 }
@@ -189,7 +255,9 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         match self.peek_byte()? {
             b'0'..=b'9' => {
                 let parsed = self.bencode.parse_bytes()?;
-                let parsed = String::from_utf8(parsed).map_err(|e| Error::Custom(e.to_string()))?;
+                let parsed = String::from_utf8(parsed).map_err(|e| {
+                    Error::Custom(format!("Error while deserializeing string data : {e}"))
+                })?;
                 visitor.visit_string(parsed)
             }
             e => Err(Error::InvalidType(format!(

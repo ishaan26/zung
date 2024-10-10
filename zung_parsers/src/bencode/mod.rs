@@ -1,3 +1,10 @@
+//! Encode and decode data in the [Bencode](https://en.wikipedia.org/wiki/Bencode) format.
+//!
+//! Bencode is a simple binary encoding format used in various contexts, most notably in
+//! BitTorrent. This type provides functionality to encode Rust data structures into Bencode format
+//! and decode Bencode strings into Rust data structures or json or yaml. See the implemented
+//! methods for more information,
+
 mod de;
 mod error;
 mod ser;
@@ -11,48 +18,21 @@ pub use value::Value;
 use std::collections::HashMap;
 use value::ValueInput;
 
-/// Parsed in string if string is passed in as the input. Parses in bytes if bytes are passed in as
-/// the input.
-pub fn parse<'a, T>(input: T) -> Result<Value>
+// Allow only str or bytes to be parsed. Public function is to_value
+pub(crate) fn parse<'a, T>(input: T) -> Result<Value>
 where
     T: Into<ValueInput<'a>>,
 {
-    match input.into() {
-        ValueInput::Str(s) => {
-            let mut bencode = Bencode {
-                input: s.as_bytes(),
-            };
+    let bytes = match input.into() {
+        ValueInput::Str(s) => s.as_bytes(),
+        ValueInput::Bytes(b) => b,
+    };
 
-            bencode.parse()
-        }
-        ValueInput::Bytes(b) => {
-            let mut bencode = Bencode { input: b };
+    let mut bencode = Bencode { input: bytes };
 
-            bencode.parse()
-        }
-    }
+    bencode.parse()
 }
 
-/// Encoding and decoding data in the [Bencode](https://en.wikipedia.org/wiki/Bencode) format.
-///
-/// Bencode is a simple binary encoding format used in various contexts, most notably in
-/// BitTorrent. This type provides functionality to encode Rust data structures into Bencode
-/// format and decode Bencode strings into Rust data structures or json or yaml. See the
-/// implemented methods for more information,
-///
-/// # Usage
-///
-/// ## Examples
-///
-/// ```rust
-/// use zung_parsers::bencode;
-///
-/// // Creating a Bencode instance from a bencode-encoded string
-/// let bencode_string = "i42e";
-/// let bencode = bencode::to_value(bencode_string).unwrap();
-///
-/// println!("{bencode}"); // Prints "42"
-/// ```
 struct Bencode<'a> {
     input: &'a [u8],
 }
@@ -77,9 +57,9 @@ impl<'a> Bencode<'a> {
             b'0'..=b'9' => {
                 let value = self.parse_bytes()?;
 
-                // TODO: is there a better way?
+                // TODO: is there a better way to handle bytes and string?
                 if value.is_ascii() {
-                    // SAFETY: Already check that bytes are ascii
+                    // SAFETY: Already checked that value is ascii.
                     Ok(Value::String(unsafe { String::from_utf8_unchecked(value) }))
                 } else {
                     Ok(Value::Bytes(value))

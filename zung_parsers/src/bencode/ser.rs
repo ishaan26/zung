@@ -1,3 +1,28 @@
+/*
+This module is directly taken from the serde_bencode library with only a few minor changes.
+
+It is licensed under MIT License as follows:
+
+The MIT License (MIT)
+
+Copyright (c) 2014 Ty Overby
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+*/
+
 use serde::{ser, Serialize};
 
 use super::{
@@ -7,7 +32,6 @@ use super::{
 
 #[derive(Default)]
 pub struct Serializer {
-    // This string starts empty and JSON is appended as values are serialized.
     buffer: Vec<u8>,
 }
 
@@ -37,6 +61,30 @@ impl AsRef<[u8]> for Serializer {
 // By convention, the public API of a Serde serializer is one or more `to_abc`
 // functions such as `to_string`, `to_bytes`, or `to_writer` depending on what
 // Rust types the serializer is able to produce as output.
+
+/// Convert a type `T` into a vector of bencode bytes.
+///
+/// This function takes a reference to a value of any type that implements the `Serialize` trait
+/// and converts it into a vector of bytes using a custom `Serializer`.
+///
+/// # Arguments
+///
+/// * `value` - A reference to the value to be serialized.
+///
+/// # Example
+///
+/// ```rust
+/// use serde::Serialize;
+/// use zung_parsers::bencode;
+///
+/// #[derive(Serialize)]
+/// struct MyStruct {
+///     field: i32,
+/// }
+///
+/// let my_struct = MyStruct { field: 42 };
+/// let bytes = bencode::to_bytes(&my_struct).unwrap(); // outputs b"i42e"
+/// ```
 pub fn to_bytes<T>(value: &T) -> Result<Vec<u8>>
 where
     T: Serialize,
@@ -46,6 +94,29 @@ where
     Ok(serializer.buffer)
 }
 
+/// Convert a type `T` into a bencode UTF-8 [`String`].
+///
+/// This function takes a reference to a value of any type that implements the `Serialize` trait
+/// and converts it into a `String` using a custom `Serializer`.
+///
+/// # Arguments
+///
+/// * `value` - A reference to the value to be serialized.
+///
+/// # Example
+///
+/// ```rust
+/// use serde::Serialize;
+/// use zung_parsers::bencode;
+///
+/// #[derive(Serialize)]
+/// struct MyStruct {
+///     field: i32,
+/// }
+///
+/// let my_struct = MyStruct { field: 42 };
+/// let bytes = bencode::to_string(&my_struct).unwrap(); // outputs "i42e"
+/// ```
 pub fn to_string<T: ser::Serialize>(b: &T) -> Result<String> {
     let mut ser = Serializer::new();
     b.serialize(&mut ser)?;
@@ -54,13 +125,26 @@ pub fn to_string<T: ser::Serialize>(b: &T) -> Result<String> {
         .map_err(|_| Error::InvalidValue("Not an UTF-8".to_string()))
 }
 
+/// Convert a `T` into [`zung_parsers::bencode::Value`](crate::bencode::Value) which is an enum that
+/// can represent any valid Bencode data.
+///
+/// ## Example
+///
+/// ```rust
+/// use zung_parsers::bencode;
+///
+/// // Creating a Bencode instance from a bencode-encoded string
+/// let bencode_string = "i42e";
+/// let bencode = bencode::to_value(bencode_string).unwrap();
+///
+/// println!("{bencode}"); // Prints "42"
+/// ```
 pub fn to_value<T>(value: T) -> Result<Value>
 where
     T: Serialize,
 {
-    let mut ser = Serializer::new();
-    value.serialize(&mut ser)?;
-    super::parse(ser.as_ref())
+    let ser = to_bytes(&value)?;
+    super::parse(&ser)
 }
 
 impl<'a> ser::Serializer for &'a mut Serializer {
@@ -150,17 +234,11 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         Ok(())
     }
 
-    // This only works for strings that don't require escape sequences but you
-    // get the idea. For example it would emit invalid JSON if the input string
-    // contains a '"' character.
     fn serialize_str(self, v: &str) -> Result<()> {
         self.push(format!("{}:{v}", v.len()));
         Ok(())
     }
 
-    // Serialize a byte array as an array of bytes. Could also use a base64
-    // string here. Binary formats will typically represent byte arrays more
-    // compactly.
     fn serialize_bytes(self, v: &[u8]) -> Result<()> {
         self.push(v.len().to_string());
         self.push(":");
@@ -368,15 +446,6 @@ impl<'a> ser::SerializeTupleStruct for &'a mut Serializer {
     }
 }
 
-// Tuple variants are a little different. Refer back to the
-// `serialize_tuple_variant` method above:
-//
-//    self.output += "{";
-//    variant.serialize(&mut *self)?;
-//    self.output += ":[";
-//
-// So the `end` method in this impl is responsible for closing both the `]` and
-// the `}`.
 impl<'a> ser::SerializeTupleVariant for &'a mut Serializer {
     type Ok = ();
     type Error = Error;
@@ -472,6 +541,7 @@ impl<'a> SerializeMap<'a> {
 impl<'a> ser::SerializeMap for SerializeMap<'a> {
     type Ok = ();
     type Error = Error;
+
     fn serialize_key<T: ?Sized + ser::Serialize>(&mut self, key: &T) -> Result<()> {
         if self.cur_key.is_some() {
             return Err(Error::InvalidValue(
@@ -482,6 +552,7 @@ impl<'a> ser::SerializeMap for SerializeMap<'a> {
         self.cur_key = Some(key.serialize(&mut string::Serializer)?);
         Ok(())
     }
+
     fn serialize_value<T: ?Sized + ser::Serialize>(&mut self, value: &T) -> Result<()> {
         let key = self.cur_key.take().ok_or_else(|| {
             Error::InvalidValue(
@@ -496,6 +567,7 @@ impl<'a> ser::SerializeMap for SerializeMap<'a> {
         }
         Ok(())
     }
+
     fn serialize_entry<K, V>(&mut self, key: &K, value: &V) -> Result<()>
     where
         K: ?Sized + ser::Serialize,
@@ -573,12 +645,7 @@ mod string {
         Err(de::Error::invalid_type(unexp, &Expected))
     }
 
-    #[doc(hidden)]
-    /// StringSerializer for serializing *just* strings (bytes are also strings in bencode).
-    /// The string is returned as Result<Vec<u8>>::Ok without any prefixing (without bencode string
-    /// length prefix).
-    // todo: This should be pub(crate).
-    pub struct Serializer;
+    pub(crate) struct Serializer;
 
     impl<'a> ser::Serializer for &'a mut Serializer {
         type Ok = Vec<u8>;
@@ -709,6 +776,107 @@ mod string {
             _len: usize,
         ) -> Result<ser::Impossible<Vec<u8>, Error>> {
             unexpected(de::Unexpected::StructVariant)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde::Serialize;
+
+    #[derive(Serialize, Debug, PartialEq)]
+    struct TestStruct {
+        integer: i32,
+        string: String,
+        vector: Vec<i32>,
+    }
+
+    #[test]
+    fn test_to_bytes() {
+        // Test with a simple integer
+        let int_value = 42;
+        let int_bytes = to_bytes(&int_value).unwrap();
+        assert_eq!(int_bytes, b"i42e");
+
+        // Test with a string
+        let string_value = "hello";
+        let string_bytes = to_bytes(&string_value).unwrap();
+        assert_eq!(string_bytes, b"5:hello");
+
+        // Test with a complex struct
+        let test_struct = TestStruct {
+            integer: 42,
+            string: "hello".to_string(),
+            vector: vec![1, 2, 3],
+        };
+        let struct_bytes = to_bytes(&test_struct).unwrap();
+        assert_eq!(
+            struct_bytes,
+            b"d7:integeri42e6:string5:hello6:vectorli1ei2ei3eee"
+        );
+    }
+
+    #[test]
+    fn test_to_string() {
+        // Test with a simple integer
+        let int_value = 42;
+        let int_string = to_string(&int_value).unwrap();
+        assert_eq!(int_string, "i42e");
+
+        // Test with a string
+        let string_value = "hello";
+        let string_string = to_string(&string_value).unwrap();
+        assert_eq!(string_string, "5:hello");
+
+        // Test with a complex struct
+        let test_struct = TestStruct {
+            integer: 42,
+            string: "hello".to_string(),
+            vector: vec![1, 2, 3],
+        };
+        let struct_string = to_string(&test_struct).unwrap();
+        assert_eq!(
+            struct_string,
+            "d7:integeri42e6:string5:hello6:vectorli1ei2ei3eee"
+        );
+    }
+
+    #[test]
+    fn test_to_value() {
+        // Test with a simple integer
+        let int_value = 42;
+        let int_bencode = to_value(int_value).unwrap();
+        assert_eq!(int_bencode, Value::Integer(42));
+
+        // Test with a string
+        let string_value = "hello";
+        let string_bencode = to_value(string_value).unwrap();
+        assert_eq!(string_bencode, Value::String("hello".to_string()));
+
+        // Test with a complex struct
+        let test_struct = TestStruct {
+            integer: 42,
+            string: "hello".to_string(),
+            vector: vec![1, 2, 3],
+        };
+        let struct_bencode = to_value(test_struct).unwrap();
+        if let Value::Dictionary(dict) = struct_bencode {
+            assert_eq!(dict.get("integer"), Some(&Value::Integer(42)));
+            assert_eq!(
+                dict.get("string"),
+                Some(&Value::String("hello".to_string()))
+            );
+            assert_eq!(
+                dict.get("vector"),
+                Some(&Value::List(vec![
+                    Value::Integer(1),
+                    Value::Integer(2),
+                    Value::Integer(3)
+                ]))
+            );
+        } else {
+            panic!("Expected dictionary");
         }
     }
 }

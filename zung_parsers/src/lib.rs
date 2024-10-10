@@ -1,3 +1,11 @@
+//! A library containing implementation of different parsers in rust.
+//!
+//! # Zung Family
+//!
+//! This library is part of the [zung](https://github.com/ishaan26/zung) family.
+//! Install the zung binary with `cargo install zung` to try out some of the feautres of this
+//! library.
+
 pub mod bencode;
 
 use clap::{Args, Subcommand, ValueEnum};
@@ -17,7 +25,7 @@ pub struct ParserArgs {
 #[derive(Debug, Subcommand)]
 #[command(flatten_help = true, subcommand_required = true)]
 enum BencodeArgs {
-    // A Bencode parser.
+    /// A Bencode encoder and decoder
     Bencode {
         #[command(subcommand)]
         commands: BencodeCommands,
@@ -56,12 +64,11 @@ enum BencodeCommands {
         output: PathBuf,
     },
 
-    /// Try decoding a String of bencode for testing purposes. This simply prints out the decoded
-    /// data model.
+    /// Try encoding or decoding a String of bencode for testing purposes. This simply prints out
+    /// the output.
     Try {
-        /// The Bencode file to decode
-        #[arg(short, long)]
-        file: Option<PathBuf>,
+        #[command(subcommand)]
+        commands: TryCommands,
     },
 }
 
@@ -75,6 +82,15 @@ enum Format {
 
     /// Convert to toml format
     Toml,
+}
+
+#[derive(Clone, Subcommand, Debug)]
+enum TryCommands {
+    /// Try encoding
+    Encode { value: String },
+
+    /// Try decoding
+    Decode { value: String },
 }
 
 impl ParserArgs {
@@ -127,32 +143,16 @@ impl ParserArgs {
                     };
                 }
 
-                BencodeCommands::Try { file } => {
-                    if let Some(file) = file {
-                        #[derive(
-                            serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq,
-                        )]
-                        struct TorrentRepr {
-                            announce: String,
-
-                            #[serde(rename = "announce-list")]
-                            announce_list: Option<Vec<Vec<String>>>,
-
-                            comment: Option<String>,
-
-                            #[serde(rename = "created by")]
-                            created_by: Option<String>,
-
-                            #[serde(rename = "creation date")]
-                            creation_date: Option<usize>,
-                        }
-
-                        let file = std::fs::read(file)?;
-
-                        let torrent: TorrentRepr = bencode::from_bytes(&file)?;
-                        println!("{torrent:#?}")
+                BencodeCommands::Try { commands } => match commands {
+                    TryCommands::Encode { value } => {
+                        let encoded = bencode::to_string(&value)?;
+                        println!("{encoded}")
                     }
-                }
+                    TryCommands::Decode { value } => {
+                        let decoded = bencode::parse(&value)?;
+                        println!("{decoded:#}")
+                    }
+                },
             },
         }
         Ok(())
