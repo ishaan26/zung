@@ -1,6 +1,4 @@
-//! # Introduction
-//!
-//! Mini rust projects that target specific features of rust
+#![doc = include_str!("../README.md")]
 
 pub mod orst;
 pub mod progbar;
