@@ -1,6 +1,22 @@
 # Changelog
 
-All notable changes to Zung_mini will be documented in this file.
+All notable changes to this project will be documented in this file.
+
+## [zung_parsers-v0.1.1] - 2024-10-10
+
+- Release
+
+### 🚀 Features
+
+- INTRODUCING ZUNG PARSERS
+- Along with full cli.
+- Deserialization and Serialization like a MF.
+
+## [zung_mini-v0.4.0] - 2024-10-10
+
+### 🚀 Features
+
+- Introducing the new sorting algorithm project: Orst
 
 ## [zung_mini-v0.3.0] - 2024-10-02
 
