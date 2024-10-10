@@ -1,10 +1,4 @@
-//! A library containing implementation of different parsers in rust.
-//!
-//! # Zung Family
-//!
-//! This library is part of the [zung](https://github.com/ishaan26/zung) family.
-//! Install the zung binary with `cargo install zung` to try out some of the feautres of this
-//! library.
+#![doc = include_str!("../README.md")]
 
 pub mod bencode;
 

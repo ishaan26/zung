@@ -4,6 +4,10 @@
 //! BitTorrent. This type provides functionality to encode Rust data structures into Bencode format
 //! and decode Bencode strings into Rust data structures or json or yaml. See the implemented
 //! methods for more information,
+//!
+//! ## TODO:
+//!
+//! - `to_writer` implementation
 
 mod de;
 mod error;
