@@ -14,7 +14,7 @@ members = ["zung_mini"]
 resolver = "2"
 
 [dependencies]
-zung_mini = { version = "0.3.1", path = "./zung_mini" }
+zung_mini = { version = "0.4.0", path = "./zung_mini" }
 zung_parsers = { version = "0.1.1", path = "./zung_parsers" }
 
 anyhow = "1.0.89"
