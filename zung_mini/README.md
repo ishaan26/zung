@@ -2,9 +2,17 @@
 
 This Library consists of varouis small rust projects that target different features of rust such as traits, lifetimes, type system etc. Each project is separated out in different modules as listed out in [Table of Contents](#table-of-contents) below.
 
-### _Disclaimer_
+## Zung Family
+
+This library is part of the [zung](https://github.com/ishaan26/zung) family.
+Install the zung binary with `cargo install zung` to try out some of the features of this
+library.
+
+## Disclaimer
 
 _This library is intended for **learning purposes only**. While I will do my best to write the most professional code I can (with my limited coding knowledge), it is not my intention for this library to be used in any production environment._
+
+Ateast not yet...
 
 ## Table of Contents
 
@@ -24,16 +32,21 @@ The [`ProgBar`](https://docs.rs/zung_mini/latest/zung_mini/progbar/index.html) m
 
 ## Features
 
-- **Simple Integration**: Easily add progress bars to any iterator with minimal code changes.
-- **Supports Bounded & Unbounded Iterators**: Progress can be tracked for both finite and infinite iterators.
-- **Customizable Appearance**: Modify the style and delimiters of the progress bar.
-- **Real-time Terminal Display**: Live updates of the progress bar in the terminal as your iterator progresses.
+- Easily add progress bars to any iterator with minimal code changes.
+- Progress can be tracked for both finite and infinite iterators.
+- Modify the style and delimiters of the progress bar.
+- Live updates of the progress bar in the terminal as your iterator progresses.
 
 # Mini Project 2 - Strsplit
 
 **_A custom string splitting utility targeting lifetimes in rust following [Crust of Rust: Lifetime Annotations](https://www.youtube.com/watch?v=rAl-9HwD858)_**
 
 The [`Strsplit`](https://docs.rs/zung_mini/latest/zung_mini/strsplit/index.html) module provides an efficient, iterator-based string splitting utility for Rust. It extends both `String` and `&str` types with a `strsplit` method, allowing users to split strings based on a specified delimiter and iterate over the resulting substrings lazily or collect them all at once. This is particularly useful when you need efficient and flexible string splitting behavior.
+
+## Features
+
+- It splits stuff.
+- Not much more than that.
 
 # Mini Project 3 - Orst
 
@@ -45,8 +58,6 @@ The [`Orst`](https://docs.rs/zung_mini/latest/zung_mini/orst/index.html) module 
 
 - It sorts stuff.
 - Easy to use.
-
----
 
 # Usage
 

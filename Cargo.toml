@@ -19,7 +19,7 @@ zung_parsers = { version = "0.1.1", path = "./zung_parsers" }
 
 anyhow = "1.0.89"
 anstyle = "1.0.8"
-clap = { version = "4.5.18", features = ["derive"] }
+clap = { version = "4.5.20", features = ["derive"] }
 
 
 [profile.release]
