@@ -1,6 +1,6 @@
 [package]
 name = "zung"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 authors = ["Ishaan Goel <ishaangoel.99@gmail.com>"]
 description = "A monolith of rust projects"
