@@ -2,6 +2,8 @@
 
 All notable changes to this project will be documented in this file.
 
+# [0.4.0] - 2024-10-10:
+
 ## [zung_parsers-v0.1.1] - 2024-10-10
 
 - Release
@@ -18,7 +20,9 @@ All notable changes to this project will be documented in this file.
 
 - Introducing the new sorting algorithm project: Orst
 
-## [zung_mini-v0.3.0] - 2024-10-02
+# [0.3.0] - 2024-10-02:
+
+## [zung_mini-v0.3.1] - 2024-10-02
 
 ### 🚀 Features
 
