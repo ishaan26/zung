@@ -10,7 +10,7 @@ readme = "README.md"
 keywords = ["projects", "learning", "monolith"]
 
 [workspace]
-members = ["zung_mini"]
+members = ["zung_mini", "zung_parsers"]
 resolver = "2"
 
 [dependencies]
