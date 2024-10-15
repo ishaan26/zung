@@ -72,7 +72,7 @@ impl MetaInfo {
     pub fn creation_date(&self) -> Option<String> {
         self.creation_date
             .and_then(|datetime| DateTime::<Utc>::from_timestamp(datetime, 0))
-            .map(|datetime| datetime.to_string())
+            .map(|datetime| datetime.to_rfc2822())
     }
 
     /// Returns the creation the creation time of the torrent, in standard UNIX epoch format.
@@ -101,6 +101,18 @@ impl MetaInfo {
         &self.info
     }
 
+    pub fn announce(&self) -> Option<&String> {
+        self.announce.as_ref()
+    }
+
+    pub fn url_list(&self) -> Option<&Vec<String>> {
+        self.url_list.as_ref()
+    }
+
+    pub fn announce_list(&self) -> Option<&Vec<Vec<String>>> {
+        self.announce_list.as_ref()
+    }
+
     pub fn piece_length(&self) -> usize {
         self.info.piece_length
     }
@@ -111,9 +123,5 @@ impl MetaInfo {
 
     pub fn torrent_size(&self) -> usize {
         self.info.torrent_size()
-    }
-
-    pub fn announce(&self) -> Option<&String> {
-        self.announce.as_ref()
     }
 }
