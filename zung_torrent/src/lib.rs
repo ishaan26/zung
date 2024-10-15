@@ -19,12 +19,18 @@ pub struct TorrentArgs {
 }
 
 #[derive(Clone, Subcommand, Debug)]
+#[command(arg_required_else_help = true)]
 enum TorrentCommands {
-    /// Prints the information contained in the torrent file
+    /// Prints the information contained in the torrent file. The information is produced fully
+    /// locally without sending any internet requests.
     Info {
-        /// The Bencode file to decode
+        /// Torrent File to process
         #[arg(short, long, required = true)]
         file: PathBuf,
+
+        /// Print the files contained in the torrent along with the general info.
+        #[arg(long, required = false)]
+        with_files: bool,
     },
 }
 
@@ -44,9 +50,12 @@ impl TorrentArgs {
     pub fn run(self) -> anyhow::Result<()> {
         // Run the commands
         match self.command {
-            TorrentCommands::Info { file } => {
+            TorrentCommands::Info { file, with_files } => {
                 let torrent = Client::new(&file)?;
                 torrent.print_torrent_info();
+                if with_files {
+                    torrent.print_torrent_files();
+                }
             }
         }
 

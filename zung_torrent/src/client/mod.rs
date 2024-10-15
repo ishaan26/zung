@@ -2,7 +2,7 @@ use anyhow::{bail, Result};
 use colored::Colorize;
 use human_bytes::human_bytes;
 
-use std::path::Path;
+use std::{fmt::Display, path::Path};
 
 use zung_parsers::bencode;
 
@@ -59,64 +59,37 @@ impl Client {
             human_bytes(size).bold().cyan()
         );
 
+        // created on
+        print_info("Created on", self.meta_info.creation_date());
+
         // created by
-        if let Some(s) = self.meta_info.created_by() {
-            println!("\n{} Created by: {}", "==>".green().bold(), s.bold().cyan());
-        }
+        print_info("Created by", self.meta_info.created_by());
 
         // comment
-        if let Some(s) = self.meta_info.comment() {
-            println!("\n{} Comment: {}", "==>".green().bold(), s.bold().cyan());
-        }
+        print_info("Comment", self.meta_info.comment());
 
-        // Files
+        // Encoded in
+        print_info("Encoded in", self.meta_info.encoding());
+    }
+
+    pub fn print_torrent_files(&self) {
         println!("\n{} Files:", "==>".green().bold(),);
         self.meta_info.info().build_file_tree().print_tree(0);
+    }
+}
 
-        // Files::SingleFile { length, .. } => {
-        //     let length = human_bytes(*length as f64);
-        //     if let Some(name) = &self.meta_info.info().name {
-        //         println!("     1. {}: {}", name.bold().magenta(), length.cyan())
-        //     } else {
-        //         println!("__No name__ : {length}")
-        //     }
-        // }
-
-        // Files::MultiFile { files } => {}
-        // if let FileState::SingleFile { name, length } = files_info {
-        //     let length = human_bytes(length as u32);
-        //     if let Some(name) = name {
-        //         println!("     1. {}: {length}", name.bold())
-        //     } else {
-        //         println!("__No name__ : {length}")
-        //     }
-        // } else if let FileState::MultiFile(map) = torrent.files() {
-        //     for (i, (name, length)) in map.iter().enumerate() {
-        //         let length = human_bytes(*length as u32);
-        //         println!("     {i}. {}: {length}", name.bold())
-        //     }
-        // }
-
-        // let info_hash = torrent.info_hash();
-        // println!(
-        //     "\n{} Info Hash: {} ",
-        //     "==>".green().bold(),
-        //     info_hash.encode_to_hex_string().bold().cyan()
-        // );
-        //
-        // if verbose {
-        //     println!("Tracker URL: {}", torrent.announce());
-        //
-        //     if let Some(al) = torrent.announce_list() {
-        //         al.iter().for_each(|a| println!("{a:?}"));
-        //     }
-        //
-        //     println!("Piece Length: {}", torrent.piece_length());
-        //
-        //     println!("Piece Hashes:");
-        //     for hash in torrent.piece_hashes_hex() {
-        //         println!("{hash}");
-        //     }
-        // }
+fn print_info<T: Display>(header: &str, value: Option<T>) {
+    if let Some(value) = value {
+        println!(
+            "\n{} {header}: {}",
+            "==>".green().bold(),
+            value.to_string().bold().cyan()
+        );
+    } else {
+        println!(
+            "\n{} {header}: {}",
+            "==>".green().bold(),
+            "__not present__".italic().dimmed()
+        );
     }
 }
