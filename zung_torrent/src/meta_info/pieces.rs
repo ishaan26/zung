@@ -66,6 +66,14 @@ impl Deref for Pieces {
     }
 }
 
+impl Pieces {
+    pub(crate) fn __test_build() -> Self {
+        Self {
+            bytes: [[1; 20], [2; 20], [3; 20]].to_vec(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod pieces_tests {
     use super::*;

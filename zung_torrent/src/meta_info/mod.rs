@@ -1,14 +1,19 @@
+mod files;
 mod info;
 mod pieces;
 
 use chrono::{DateTime, Utc};
-pub use info::{Files, Info};
+use files::FileNode;
+pub use files::Files;
+pub use info::Info;
 
 use serde::{Deserialize, Serialize};
 
-/// [Metainfo files](https://en.wikipedia.org/wiki/Torrent_file) (also known as .torrent files) are
-/// bencoded dictionaries that contains metadata about files and folders to be distributed, and
-/// usually also: a list of the network locations of
+/// A type reprasenting deserialized [Metainfo files](https://en.wikipedia.org/wiki/Torrent_file)
+/// (also known as .torrent files)
+///
+/// Meteinfo files are bencoded dictionaries that contains metadata about files and folders to be
+/// distributed, and usually also: a list of the network locations of
 /// [trackers](https://en.wikipedia.org/wiki/BitTorrent_tracker)
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MetaInfo {
@@ -98,5 +103,17 @@ impl MetaInfo {
 
     pub fn piece_length(&self) -> usize {
         self.info.piece_length
+    }
+
+    pub fn build_file_tree(&self) -> FileNode<'_> {
+        self.info.build_file_tree()
+    }
+
+    pub fn torrent_size(&self) -> usize {
+        self.info.torrent_size()
+    }
+
+    pub fn announce(&self) -> Option<&String> {
+        self.announce.as_ref()
     }
 }

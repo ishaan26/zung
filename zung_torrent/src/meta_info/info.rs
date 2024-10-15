@@ -1,9 +1,11 @@
-use std::{borrow::Cow, collections::HashMap};
+use std::borrow::Cow;
 
-use human_bytes::human_bytes;
 use serde::{Deserialize, Serialize};
 
-use super::pieces::Pieces;
+use super::{
+    files::{FileNode, Files},
+    pieces::Pieces,
+};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Info {
@@ -58,111 +60,14 @@ pub struct Info {
     pub(crate) name: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum Files {
-    SingleFile {
-        // length of the file in bytes (integer)
-        length: usize,
-
-        // (optional) a 32-character hexadecimal string corresponding to the MD5 sum of the file. This is not used by BitTorrent at all, but it is included by some programs for greater compatibility.
-        md5sum: Option<String>,
-    },
-    MultiFile {
-        // a list of dictionaries, one for each file. Each dictionary in this list contains the following keys:
-        files: Vec<MultiFiles>,
-    },
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct MultiFiles {
-    // length of the file in bytes (integer)
-    pub(crate) length: usize,
-
-    // (optional) a 32-character hexadecimal string corresponding to the MD5 sum of the file. This
-    // is not used by BitTorrent at all, but it is included by some programs for greater
-    // compatibility.
-    pub(crate) md5sum: Option<String>,
-
-    // a list containing one or more string elements that together represent the path and filename.
-    // Each element in the list corresponds to either a directory name or (in the case of the final
-    // element) the filename. For example, a the file "dir1/dir2/file.ext" would consist of three
-    // string elements: "dir1", "dir2", and "file.ext". This is encoded as a bencoded list of
-    // strings such as l4:dir14:dir28:file.exte
-    pub(crate) path: Vec<String>,
-}
-
-#[derive(Debug, Clone)]
-pub enum FileNode<'a> {
-    Dir {
-        parent: Cow<'a, str>,
-        children: HashMap<String, FileNode<'a>>,
-        length: usize,
-    },
-    File {
-        name: Cow<'a, str>,
-        length: usize,
-    },
-}
-
-impl<'a> FileNode<'a> {
-    fn new_dir(name: &'a str) -> Self {
-        FileNode::Dir {
-            parent: Cow::from(name),
-            children: HashMap::new(),
-            length: 0,
-        }
-    }
-
-    fn new_file(name: &'a str, length: usize) -> Self {
-        FileNode::File {
-            name: Cow::from(name),
-            length,
-        }
-    }
-
-    fn add_child(&mut self, path: &'a [String], size: usize) {
-        if path.is_empty() {
-            return;
-        }
-
-        match self {
-            FileNode::Dir {
-                children, length, ..
-            } => {
-                if path.is_empty() {
-                    return;
-                }
-
-                let current = &path[0];
-                let child = children
-                    .entry(current.clone())
-                    .or_insert_with(|| FileNode::new_dir(current));
-
-                if path.len() > 1 {
-                    *length += size;
-                    child.add_child(&path[1..], size);
-                } else {
-                    *child = FileNode::new_file(current, size);
-                    *length += size;
-                }
-            }
-            FileNode::File { .. } => {
-                // If we're trying to add a path to a file, something's wrong
-                panic!("Attempting to add a path to a file node");
-            }
-        }
-    }
-}
-
 impl<'a> Info {
-    pub fn torrent_size(&self) -> usize {
+    pub(crate) fn torrent_size(&self) -> usize {
         let n_pieces = self.pieces.len();
         let plen = self.piece_length;
         n_pieces * plen
     }
 
-    pub fn build_file_tree(&'a self) -> FileNode<'a> {
+    pub(crate) fn build_file_tree(&'a self) -> FileNode<'a> {
         match &self.files {
             Files::SingleFile { length, .. } => {
                 if let Some(name) = &self.name {
@@ -194,43 +99,139 @@ impl<'a> Info {
     }
 }
 
-impl<'a> FileNode<'a> {
-    #[cfg(feature = "client")]
-    pub fn print_tree(&self, mut indent: usize) {
-        use colored::Colorize;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::meta_info::files::{Files, MultiFiles};
+    use crate::meta_info::pieces::Pieces;
 
-        match self {
+    #[test]
+    fn test_torrent_size() {
+        // Setup: Creating an instance of `Info` with mocked piece length and pieces.
+        let piece_length = 1024; // each piece is 1024 bytes
+        let pieces = Pieces::__test_build();
+
+        let info = Info {
+            piece_length,
+            pieces,
+            private: None,
+            files: Files::SingleFile {
+                length: 4096,
+                md5sum: None,
+            },
+            name: Some("test_file.txt".to_string()),
+        };
+
+        // We expect 4 pieces, each of size 1024 bytes
+        assert_eq!(info.torrent_size(), 3 * 1024);
+    }
+
+    #[test]
+    fn test_build_file_tree_single_file() {
+        // Setup: Creating a single-file torrent info
+        let info = Info {
+            piece_length: 1024,
+            pieces: Pieces::__test_build(),
+            private: None,
+            files: Files::SingleFile {
+                length: 4096,
+                md5sum: None,
+            },
+            name: Some("test_file.txt".to_string()),
+        };
+
+        let file_tree = info.build_file_tree();
+
+        // Check if the file tree is built correctly for a single file
+        match file_tree {
+            FileNode::File { name, length } => {
+                assert_eq!(name, Cow::from("test_file.txt"));
+                assert_eq!(length, 4096);
+            }
+            _ => panic!("Expected a file node"),
+        }
+    }
+
+    #[test]
+    fn test_build_file_tree_multi_file() {
+        // Setup: Creating a multi-file torrent info
+        let files = vec![
+            MultiFiles {
+                length: 1024,
+                md5sum: None,
+                path: vec!["folder".to_string(), "file1.txt".to_string()],
+            },
+            MultiFiles {
+                length: 2048,
+                md5sum: None,
+                path: vec!["folder".to_string(), "file2.txt".to_string()],
+            },
+        ];
+
+        let info = Info {
+            piece_length: 1024,
+            pieces: Pieces::__test_build(), // Mocked 4 pieces
+            private: None,
+            files: Files::MultiFile { files },
+            name: Some("root_folder".to_string()),
+        };
+
+        let file_tree = info.build_file_tree();
+
+        // Check if the file tree is built correctly for multi-file torrents
+        match file_tree {
             FileNode::Dir {
-                parent,
-                children,
-                length,
+                parent, children, ..
             } => {
-                if !parent.starts_with(".___") {
-                    println!();
-                    println!(
-                        "{:indent$} - {} ({})",
-                        "",
-                        parent.bold().underline().green(),
-                        human_bytes(*length as f64),
-                        indent = indent,
-                    );
+                assert_eq!(parent, Cow::from("root_folder"));
+                assert!(children.contains_key("folder"));
 
-                    indent += 4;
+                match children.get("folder").unwrap() {
+                    FileNode::Dir { children, .. } => {
+                        assert_eq!(children.len(), 2);
+                        let file1 = children.get("file1.txt").expect("File1 not found");
+                        match file1 {
+                            FileNode::File { name, length } => {
+                                assert_eq!(name, "file1.txt");
+                                assert_eq!(*length, 1024);
+                            }
+                            _ => panic!("Expected a file node"),
+                        }
 
-                    for child in children.values() {
-                        child.print_tree(indent);
+                        let file2 = children.get("file2.txt").expect("File2 not found");
+                        match file2 {
+                            FileNode::File { name, length } => {
+                                assert_eq!(name, "file2.txt");
+                                assert_eq!(*length, 2048);
+                            }
+                            _ => panic!("Expected a file node"),
+                        }
                     }
+                    _ => panic!("Expected a directory node for 'folder'"),
                 }
             }
-            FileNode::File { name, length } => {
-                println!(
-                    "{:indent$} - {} ({})",
-                    "",
-                    name.bold(),
-                    human_bytes(*length as f64).cyan(),
-                    indent = indent
-                );
-            }
+            _ => panic!("Expected a directory node for 'root_folder'"),
         }
+    }
+
+    #[test]
+    #[should_panic(expected = "The torrent has no root folder")]
+    fn test_build_file_tree_no_root_folder() {
+        // Setup: Creating a multi-file torrent info without a root folder (should panic)
+        let files = vec![MultiFiles {
+            length: 1024,
+            md5sum: None,
+            path: vec!["folder".to_string(), "file1.txt".to_string()],
+        }];
+
+        let info = Info {
+            piece_length: 1024,
+            pieces: Pieces::__test_build(), // Mocked 4 pieces
+            private: None,
+            files: Files::MultiFile { files },
+            name: None, // No root folder
+        };
+
+        info.build_file_tree(); // This should panic because the root folder is missing
     }
 }

@@ -20,14 +20,10 @@ Ateast not yet...
 
 # Introduction
 
-BitTorrent is a peer-to-peer file sharing protocol designed by Bram Cohen. BitTorrent is designed to facilitate file transfers among multiple peers across unreliable networks.[1](@1)
+BitTorrent is a peer-to-peer file sharing protocol designed by Bram Cohen. BitTorrent is designed to facilitate file transfers among multiple peers across unreliable networks.[1]
 
 BitTorrent is a protocol for distributing files. It identifies content by URL and is designed to integrate seamlessly with the web. Its advantage over plain HTTP is that when multiple downloads of the same file happen concurrently, the downloaders upload to each other, making it possible for the file source to support very large numbers of downloaders with only a modest increase in its load.
 
 # Usage
 
 TODO: Update
-
-# Citations
-
-@1

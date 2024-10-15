@@ -8,6 +8,7 @@ use zung_parsers::bencode;
 
 use crate::MetaInfo;
 
+#[derive(Debug)]
 pub struct Client {
     meta_info: MetaInfo,
     file_name: String,
@@ -45,6 +46,8 @@ impl Client {
 
     pub fn print_torrent_info(&self) {
         println!("\"{}\" ", self.file_name.magenta().bold().underline(),);
+
+        print_info("Title", self.meta_info.title());
 
         // Length and pieces details
         let npieces = self.meta_info.number_of_pieces();
