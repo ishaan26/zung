@@ -64,12 +64,15 @@ impl<'a> Info {
     pub(crate) fn torrent_size(&self) -> usize {
         let n_pieces = self.pieces.len();
         let plen = self.piece_length;
+        // Number of pieces * length of each piece gives us the total size of the torrent.
         n_pieces * plen
     }
 
     pub(crate) fn build_file_tree(&'a self) -> FileNode<'a> {
+        // self.files enum is constructed while deserializing the torrent file.
         match &self.files {
-            Files::SingleFile { length, .. } => {
+            // TODO: Support for md5sum
+            Files::SingleFile { length, md5sum: _ } => {
                 if let Some(name) = &self.name {
                     FileNode::File {
                         name: Cow::from(name),

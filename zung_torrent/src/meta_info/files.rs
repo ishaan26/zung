@@ -95,11 +95,13 @@ impl<'a> FileNode<'a> {
                     return;
                 }
 
-                let current = &path[0];
+                let current = path.first().unwrap();
                 let child = children
                     .entry(current.clone())
                     .or_insert_with(|| FileNode::new_dir(current));
 
+                // Add sub directories recursively. The the last entry in the files list is hit,
+                // change FilesNode::Dir entry to FilesNode::Files
                 if path.len() > 1 {
                     *length += size;
                     child.add_child(&path[1..], size);
@@ -114,15 +116,13 @@ impl<'a> FileNode<'a> {
             }
         }
     }
-}
 
-impl<'a> FileNode<'a> {
-    #[cfg(feature = "client")]
     /// Recursively prints the file tree in a human-readable format, using indentation.
     ///
     /// ## Arguments:
     ///
     /// `indent`: Indentation step to use for printing child data in the file structure hirarcy.
+    #[cfg(feature = "client")]
     pub fn print_tree(&self, mut indent: usize) {
         use colored::Colorize;
 
