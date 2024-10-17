@@ -2,12 +2,15 @@ mod files;
 mod info;
 mod pieces;
 
+use anyhow::Result;
 use chrono::{DateTime, Utc};
 use files::FileNode;
+
 pub use files::Files;
-pub use info::Info;
+pub use info::{Info, InfoHash};
 
 use serde::{Deserialize, Serialize};
+use zung_parsers::bencode;
 
 /// A type reprasenting deserialized [Metainfo files](https://en.wikipedia.org/wiki/Torrent_file)
 /// (also known as .torrent files)
@@ -57,6 +60,11 @@ pub struct MetaInfo {
 }
 
 impl MetaInfo {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        let meta_info: Self = bencode::from_bytes(bytes)?;
+        Ok(meta_info)
+    }
+
     /// Title of the torrent file (if any)
     pub fn title(&self) -> Option<&String> {
         self.title.as_ref()

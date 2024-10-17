@@ -2,11 +2,11 @@
 
 mod meta_info;
 
+pub use meta_info::MetaInfo;
+
 #[cfg(feature = "client")]
 mod client;
 pub use client::Client;
-
-pub use meta_info::MetaInfo;
 
 use clap::{Args, Subcommand, ValueEnum};
 use std::path::PathBuf;

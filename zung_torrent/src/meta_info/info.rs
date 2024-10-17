@@ -1,4 +1,7 @@
-use std::borrow::Cow;
+use std::{
+    borrow::Cow,
+    fmt::{Debug, Display},
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -99,6 +102,50 @@ impl<'a> Info {
                 }
             }
         }
+    }
+}
+
+/// Urlencoded 20-byte SHA1 hash of the value of the info key from the Metainfo file.
+#[derive(Clone, PartialEq, Eq)]
+pub struct InfoHash {
+    sha1: sha1_smol::Sha1,
+}
+
+impl InfoHash {
+    pub(crate) fn new(bytes: &[u8]) -> Self {
+        let mut m = sha1_smol::Sha1::new();
+        m.update(bytes);
+        InfoHash { sha1: m }
+    }
+
+    /// Returns the infohash sha1 value as bytes
+    pub fn as_bytes(&self) -> [u8; 20] {
+        self.sha1.digest().bytes()
+    }
+
+    /// Url-encodes the infohash value for communication with a [`Tracker`](crate::Trackers)
+    pub fn to_url_encoded(&self) -> String {
+        let bytes = self.as_bytes();
+        let mut buff = String::with_capacity(60);
+        for byte in bytes {
+            buff.push('%');
+            buff.push_str(&hex::encode([byte]));
+        }
+        buff
+    }
+}
+
+impl Display for InfoHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.sha1.digest())
+    }
+}
+
+impl Debug for InfoHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InfoHash")
+            .field("sha1", &self.to_string())
+            .finish()
     }
 }
 

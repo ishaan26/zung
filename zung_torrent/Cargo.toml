@@ -19,6 +19,7 @@ bytes = { version = "1.7.2", features = ["serde"] }
 clap = { version = "4.5.18", features = ["derive"] }
 hex = "0.4.3"
 chrono = { version = "0.4.38", features = ["serde"] }
+sha1_smol = "1.0.1"
 
 colored = { version = "2.1.0", optional = true }
 human_bytes = { version = "0.4.3", optional = true }
@@ -27,4 +28,4 @@ human_bytes = { version = "0.4.3", optional = true }
 serde = { version = "1.0.210", features = ["derive"] }
 serde_bytes = "0.11.15"
 
-zung_parsers = "0.1.1"
+zung_parsers = { version = "0.1.1", path = "../zung_parsers" }

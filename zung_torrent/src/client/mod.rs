@@ -1,17 +1,17 @@
 use anyhow::{bail, Result};
 use colored::Colorize;
 use human_bytes::human_bytes;
+use zung_parsers::bencode;
 
 use std::{fmt::Display, path::Path};
 
-use zung_parsers::bencode;
-
-use crate::MetaInfo;
+use crate::{meta_info::InfoHash, MetaInfo};
 
 #[derive(Debug)]
 pub struct Client {
     meta_info: MetaInfo,
     file_name: String,
+    info_hash: InfoHash,
 }
 
 impl Client {
@@ -24,12 +24,22 @@ impl Client {
 
             let file = std::fs::read(file).expect("Unable to read the provided file");
 
-            let meta_info =
-                bencode::from_bytes(&file).expect("The file provided is not a valid torrent file");
+            let value = bencode::parse(&file)?;
+
+            let info = value
+                .get_from_dictionary("info")
+                .expect("Invalid Torrent File - No info dictionary provided");
+
+            let info = bencode::to_bytes(info)?;
+
+            let info_hash = InfoHash::new(&info);
+
+            let meta_info = MetaInfo::from_bytes(&file).expect("Invalid torrent file provided");
 
             Ok(Client {
                 meta_info,
                 file_name,
+                info_hash,
             })
         } else {
             bail!("File not found")
@@ -73,11 +83,18 @@ impl Client {
 
         // Encoded in
         print_info("Encoded in", self.meta_info.encoding());
+
+        // info_hash
+        print_info("Info Hash", Some(self.info_hash().to_string()));
     }
 
     pub fn print_torrent_files(&self) {
         println!("\n{} Files:", "==>".green().bold(),);
         self.meta_info.info().build_file_tree().print_tree(0);
+    }
+
+    pub fn info_hash(&self) -> &InfoHash {
+        &self.info_hash
     }
 }
 
