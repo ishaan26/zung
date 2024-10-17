@@ -3,13 +3,13 @@ use colored::Colorize;
 use human_bytes::human_bytes;
 use zung_parsers::bencode;
 
-use std::{fmt::Display, path::Path};
+use std::{fmt::Display, path::Path, sync::Arc, thread};
 
 use crate::{meta_info::InfoHash, MetaInfo};
 
 #[derive(Debug)]
 pub struct Client {
-    meta_info: MetaInfo,
+    meta_info: Arc<MetaInfo>,
     file_name: String,
     info_hash: InfoHash,
 }
@@ -26,15 +26,22 @@ impl Client {
 
             let value = bencode::parse(&file)?;
 
-            let info = value
-                .get_from_dictionary("info")
-                .expect("Invalid Torrent File - No info dictionary provided");
+            let info = thread::spawn(move || {
+                let info = value
+                    .get_from_dictionary("info")
+                    .expect("Invalid Torrent File - No info dictionary provided");
 
-            let info = bencode::to_bytes(info)?;
+                let info = bencode::to_bytes(info).unwrap();
 
-            let info_hash = InfoHash::new(&info);
+                InfoHash::new(&info)
+            });
 
-            let meta_info = MetaInfo::from_bytes(&file).expect("Invalid torrent file provided");
+            let meta_info = thread::spawn(move || {
+                MetaInfo::from_bytes(&file).expect("Invalid torrent file provided")
+            });
+
+            let info_hash = info.join().unwrap();
+            let meta_info = Arc::new(meta_info.join().unwrap());
 
             Ok(Client {
                 meta_info,
@@ -73,16 +80,29 @@ impl Client {
         );
 
         // created on
-        print_info("Created on", self.meta_info.creation_date());
+        let meta_info = Arc::clone(&self.meta_info);
+        thread::spawn(move || {
+            print_info("Created on", meta_info.creation_date());
+        });
 
         // created by
-        print_info("Created by", self.meta_info.created_by());
+        let meta_info = Arc::clone(&self.meta_info);
+        thread::spawn(move || {
+            print_info("Created by", meta_info.created_by());
+        });
 
         // comment
-        print_info("Comment", self.meta_info.comment());
+        let meta_info = Arc::clone(&self.meta_info);
+
+        thread::spawn(move || {
+            print_info("Comment", meta_info.comment());
+        });
 
         // Encoded in
-        print_info("Encoded in", self.meta_info.encoding());
+        let meta_info = Arc::clone(&self.meta_info);
+        thread::spawn(move || {
+            print_info("Encoded in", meta_info.encoding());
+        });
 
         // info_hash
         print_info("Info Hash", Some(self.info_hash().to_string()));

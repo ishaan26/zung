@@ -1,5 +1,9 @@
 use std::ops::Deref;
 
+use rayon::{
+    iter::{IndexedParallelIterator, ParallelIterator},
+    slice::ParallelSlice,
+};
 use serde::{de::Visitor, Deserialize, Serialize};
 
 /// This is a string consisting of the concatenation of all 20-byte sha1 hash values, one per piece
@@ -26,15 +30,19 @@ impl<'de> Visitor<'de> for PiecesVisitor {
         E: serde::de::Error,
     {
         if v.len() % 20 != 0 {
-            return Err(E::custom("Pieces should be in 20 byte chunks always."));
+            return Err(E::custom(
+                "Invalid Torrent File - Pieces should be in 20 byte chunks always",
+            ));
         }
+        let len = v.len() / 20;
+        let mut chunks = Vec::with_capacity(len);
 
-        let chunk_count = v.len() / 20;
-        let mut chunks: Vec<[u8; 20]> = Vec::with_capacity(chunk_count);
-
-        for chunk in v.chunks_exact(20) {
-            chunks.push(chunk.try_into().expect("chunk length already verified"));
-        }
+        v.par_chunks_exact(20)
+            .map(|c| {
+                c.try_into()
+                    .expect("Unable to divide pieces into 20 byte chunks")
+            })
+            .collect_into_vec(&mut chunks);
 
         Ok(Pieces { bytes: chunks })
     }
