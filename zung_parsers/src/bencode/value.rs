@@ -1,6 +1,6 @@
 use serde::{
     ser::{SerializeMap, SerializeSeq},
-    Deserialize, Serialize, Serializer,
+    Serialize, Serializer,
 };
 
 use std::{
@@ -9,8 +9,7 @@ use std::{
 };
 
 /// Representation of Bencode values in Rust.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(untagged)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     /// Represents an integer value in Bencode. Bencoded integers are prefixed with `i` and
     /// suffixed with `e` (e.g., `i42e` for the integer 42).
@@ -35,6 +34,16 @@ pub enum Value {
     Dictionary(HashMap<String, Value>),
 }
 
+impl Value {
+    pub fn get_from_dictionary(&self, index: &str) -> Option<&Value> {
+        if let Value::Dictionary(map) = self {
+            map.get(index)
+        } else {
+            None
+        }
+    }
+}
+
 impl Serialize for Value {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -42,11 +51,7 @@ impl Serialize for Value {
     {
         match self {
             Value::Integer(i) => serializer.serialize_i64(*i),
-            Value::Bytes(b) => {
-                // Convert bytes to hexadecimal string
-                let hex_string = hex::encode(b);
-                serializer.serialize_str(&hex_string)
-            }
+            Value::Bytes(b) => serializer.serialize_bytes(b),
             Value::String(s) => serializer.serialize_str(s),
             Value::List(l) => {
                 let mut seq = serializer.serialize_seq(Some(l.len()))?;

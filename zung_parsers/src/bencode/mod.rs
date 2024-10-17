@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use value::ValueInput;
 
 // Allow only str or bytes to be parsed. Public function is to_value
-pub(crate) fn parse<'a, T>(input: T) -> Result<Value>
+pub fn parse<'a, T>(input: T) -> Result<Value>
 where
     T: Into<ValueInput<'a>>,
 {
