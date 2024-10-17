@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 
 use zung_mini::MiniArgs;
 use zung_parsers::ParserArgs;
+use zung_torrent::TorrentArgs;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None, styles=get_styles())] // Read from `Cargo.toml`
@@ -17,6 +18,9 @@ enum Commands {
 
     /// Parsers for different data formats
     Parsers(ParserArgs),
+
+    /// Torrent Client
+    Torrent(TorrentArgs),
 }
 
 fn main() -> anyhow::Result<()> {
@@ -25,6 +29,7 @@ fn main() -> anyhow::Result<()> {
     match cli.commands {
         Commands::Mini(mini_args) => mini_args.run(),
         Commands::Parsers(bencode_args) => bencode_args.run()?,
+        Commands::Torrent(torrent_args) => torrent_args.run()?,
     }
 
     Ok(())
