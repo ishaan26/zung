@@ -4,9 +4,8 @@ mod pieces;
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use files::FileNode;
 
-pub use files::Files;
+pub use files::{FileTree, Files};
 pub use info::{Info, InfoHash};
 
 use serde::{Deserialize, Serialize};
@@ -125,7 +124,7 @@ impl MetaInfo {
         self.info.piece_length
     }
 
-    pub fn build_file_tree(&self) -> FileNode<'_> {
+    pub fn build_file_tree(&self) -> FileTree<'_> {
         self.info.build_file_tree()
     }
 

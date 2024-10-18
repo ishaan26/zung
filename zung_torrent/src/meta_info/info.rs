@@ -6,7 +6,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use super::{
-    files::{FileNode, Files},
+    files::{FileNode, FileTree, Files},
     pieces::Pieces,
 };
 
@@ -71,12 +71,12 @@ impl<'a> Info {
         n_pieces * plen
     }
 
-    pub(crate) fn build_file_tree(&'a self) -> FileNode<'a> {
+    pub(crate) fn build_file_tree(&'a self) -> FileTree<'a> {
         // self.files enum is constructed while deserializing the torrent file.
         match &self.files {
             // TODO: Support for md5sum
             Files::SingleFile { length, md5sum: _ } => {
-                if let Some(name) = &self.name {
+                let node = if let Some(name) = &self.name {
                     FileNode::File {
                         name: Cow::from(name),
                         length: *length,
@@ -86,17 +86,20 @@ impl<'a> Info {
                         name: Cow::from("__No Name__"),
                         length: *length,
                     }
-                }
+                };
+                FileTree { node, n: 1 }
             }
             Files::MultiFile { files } => {
                 if let Some(name) = &self.name {
                     let mut root = FileNode::new_dir(name);
+                    let mut n = 0;
                     for file in files {
                         let path = &file.path;
                         let file_path = &path[..path.len()];
                         root.add_child(file_path, file.length);
+                        n += 1;
                     }
-                    root
+                    FileTree { node: root, n }
                 } else {
                     panic!("The torrent has no root folder")
                 }
@@ -193,7 +196,7 @@ mod tests {
         let file_tree = info.build_file_tree();
 
         // Check if the file tree is built correctly for a single file
-        match file_tree {
+        match file_tree.node {
             FileNode::File { name, length } => {
                 assert_eq!(name, Cow::from("test_file.txt"));
                 assert_eq!(length, 4096);
@@ -229,7 +232,7 @@ mod tests {
         let file_tree = info.build_file_tree();
 
         // Check if the file tree is built correctly for multi-file torrents
-        match file_tree {
+        match file_tree.node {
             FileNode::Dir {
                 parent, children, ..
             } => {

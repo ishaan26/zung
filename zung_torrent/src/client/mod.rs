@@ -3,15 +3,20 @@ use colored::Colorize;
 use human_bytes::human_bytes;
 use zung_parsers::bencode;
 
-use std::{fmt::Display, path::Path, sync::Arc, thread};
+use std::{cell::OnceCell, fmt::Display, path::Path, sync::Arc, thread};
 
-use crate::{meta_info::InfoHash, MetaInfo};
+use crate::{
+    meta_info::{FileTree, InfoHash},
+    MetaInfo,
+};
 
 #[derive(Debug)]
 pub struct Client {
     meta_info: Arc<MetaInfo>,
     file_name: String,
     info_hash: InfoHash,
+    num_files: OnceCell<usize>, // Cache no. of files when calling either file_tree or
+                                // number_of_files methods.
 }
 
 impl Client {
@@ -26,6 +31,10 @@ impl Client {
 
             let value = bencode::parse(&file)?;
 
+            let meta_info = thread::spawn(move || {
+                MetaInfo::from_bytes(&file).expect("Invalid torrent file provided")
+            });
+
             let info = thread::spawn(move || {
                 let info = value
                     .get_from_dictionary("info")
@@ -36,17 +45,18 @@ impl Client {
                 InfoHash::new(&info)
             });
 
-            let meta_info = thread::spawn(move || {
-                MetaInfo::from_bytes(&file).expect("Invalid torrent file provided")
-            });
-
-            let info_hash = info.join().unwrap();
-            let meta_info = Arc::new(meta_info.join().unwrap());
+            let meta_info = Arc::new(
+                meta_info
+                    .join()
+                    .expect("Unable to deserialize the torrent file"),
+            );
+            let info_hash = info.join().expect("Unable to calculate infohash");
 
             Ok(Client {
                 meta_info,
                 file_name,
                 info_hash,
+                num_files: OnceCell::new(),
             })
         } else {
             bail!("File not found")
@@ -79,42 +89,63 @@ impl Client {
             human_bytes(size).bold().cyan()
         );
 
+        let mut handle = Vec::new();
+
         // created on
         let meta_info = Arc::clone(&self.meta_info);
-        thread::spawn(move || {
+        handle.push(thread::spawn(move || {
             print_info("Created on", meta_info.creation_date());
-        });
+        }));
 
         // created by
         let meta_info = Arc::clone(&self.meta_info);
-        thread::spawn(move || {
+        handle.push(thread::spawn(move || {
             print_info("Created by", meta_info.created_by());
-        });
+        }));
 
         // comment
         let meta_info = Arc::clone(&self.meta_info);
-
-        thread::spawn(move || {
+        handle.push(thread::spawn(move || {
             print_info("Comment", meta_info.comment());
-        });
+        }));
 
         // Encoded in
         let meta_info = Arc::clone(&self.meta_info);
-        thread::spawn(move || {
+        handle.push(thread::spawn(move || {
             print_info("Encoded in", meta_info.encoding());
-        });
+        }));
+
+        for h in handle {
+            h.join().expect("Failed to print information");
+        }
 
         // info_hash
         print_info("Info Hash", Some(self.info_hash().to_string()));
+
+        print_info("Number of Files", Some(self.number_of_files()));
     }
 
     pub fn print_torrent_files(&self) {
-        println!("\n{} Files:", "==>".green().bold(),);
-        self.meta_info.info().build_file_tree().print_tree(0);
+        println!("\n{} Files:", "==>".green().bold());
+        self.file_tree().print_file_tree();
     }
 
     pub fn info_hash(&self) -> &InfoHash {
         &self.info_hash
+    }
+
+    pub fn file_tree(&self) -> FileTree<'_> {
+        let tree = self.meta_info.info.build_file_tree();
+        if self.num_files.get().is_none() {
+            self.num_files.set(tree.n).unwrap(); // num_files is None.
+        }
+        tree
+    }
+
+    pub fn number_of_files(&self) -> usize {
+        *self
+            .num_files
+            .get_or_init(|| self.meta_info.info().build_file_tree().number_of_files())
     }
 }
 
@@ -129,7 +160,7 @@ fn print_info<T: Display>(header: &str, value: Option<T>) {
         println!(
             "\n{} {header}: {}",
             "==>".green().bold(),
-            "__not present__".italic().dimmed()
+            "not present".italic().dimmed()
         );
     }
 }

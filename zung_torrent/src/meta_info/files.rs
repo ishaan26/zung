@@ -1,7 +1,9 @@
-use std::{borrow::Cow, collections::HashMap};
+use std::{borrow::Cow, collections::BTreeMap};
 
 use human_bytes::human_bytes;
 use serde::{Deserialize, Serialize};
+
+const PADDING_FILE_IDENTIFIER: &str = ".___";
 
 /// Reprasents the the single file or multi file state of the torrent file.
 ///
@@ -51,10 +53,26 @@ pub struct MultiFiles {
 }
 
 #[derive(Debug, Clone)]
-pub enum FileNode<'a> {
+pub struct FileTree<'a> {
+    pub(crate) node: FileNode<'a>,
+    pub(crate) n: usize,
+}
+
+impl<'a> FileTree<'a> {
+    pub fn print_file_tree(&self) {
+        self.node.print_tree(4);
+    }
+
+    pub fn number_of_files(&self) -> usize {
+        self.n
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub(crate) enum FileNode<'a> {
     Dir {
         parent: Cow<'a, str>,
-        children: HashMap<String, FileNode<'a>>,
+        children: BTreeMap<String, FileNode<'a>>,
         length: usize,
     },
     File {
@@ -70,7 +88,7 @@ impl<'a> FileNode<'a> {
     pub(crate) fn new_dir(name: &'a str) -> Self {
         FileNode::Dir {
             parent: Cow::from(name),
-            children: HashMap::new(),
+            children: BTreeMap::new(),
             length: 0,
         }
     }
@@ -96,18 +114,20 @@ impl<'a> FileNode<'a> {
                 }
 
                 let current = path.first().unwrap();
-                let child = children
-                    .entry(current.clone())
-                    .or_insert_with(|| FileNode::new_dir(current));
+                if !current.starts_with(PADDING_FILE_IDENTIFIER) {
+                    let child = children
+                        .entry(current.clone())
+                        .or_insert_with(|| FileNode::new_dir(current));
 
-                // Add sub directories recursively. The the last entry in the files list is hit,
-                // change FilesNode::Dir entry to FilesNode::Files
-                if path.len() > 1 {
-                    *length += size;
-                    child.add_child(&path[1..], size);
-                } else {
-                    *child = FileNode::new_file(current, size);
-                    *length += size;
+                    // Add sub directories recursively. The the last entry in the files list is hit,
+                    // change FilesNode::Dir entry to FilesNode::Files
+                    if path.len() > 1 {
+                        *length += size;
+                        child.add_child(&path[1..], size);
+                    } else {
+                        *child = FileNode::new_file(current, size);
+                        *length += size;
+                    }
                 }
             }
             FileNode::File { .. } => {
@@ -123,7 +143,7 @@ impl<'a> FileNode<'a> {
     ///
     /// `indent`: Indentation step to use for printing child data in the file structure hirarcy.
     #[cfg(feature = "client")]
-    pub fn print_tree(&self, mut indent: usize) {
+    fn print_tree(&self, mut indent: usize) {
         use colored::Colorize;
 
         match self {
@@ -132,21 +152,19 @@ impl<'a> FileNode<'a> {
                 children,
                 length,
             } => {
-                if !parent.starts_with(".___") {
-                    println!();
-                    println!(
-                        "{:indent$} - {} ({})",
-                        "",
-                        parent.bold().underline().green(),
-                        human_bytes(*length as f64),
-                        indent = indent,
-                    );
+                println!();
+                println!(
+                    "{:indent$} - {} ({})",
+                    "",
+                    parent.bold().underline().green(),
+                    human_bytes(*length as f64),
+                    indent = indent,
+                );
 
-                    indent += 4;
+                indent += 4;
 
-                    for child in children.values() {
-                        child.print_tree(indent);
-                    }
+                for child in children.values() {
+                    child.print_tree(indent);
                 }
             }
             FileNode::File { name, length } => {
