@@ -5,7 +5,7 @@ mod pieces;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 
-pub use files::{FileTree, Files};
+pub use files::{FileTree, Files, SortOrd};
 pub use info::{Info, InfoHash};
 
 use serde::{Deserialize, Serialize};

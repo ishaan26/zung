@@ -6,7 +6,7 @@ use zung_parsers::bencode;
 use std::{cell::OnceCell, fmt::Display, path::Path, sync::Arc, thread};
 
 use crate::{
-    meta_info::{FileTree, InfoHash},
+    meta_info::{FileTree, InfoHash, SortOrd},
     MetaInfo,
 };
 
@@ -143,10 +143,10 @@ impl Client {
         print_info("Number of Files", Some(self.number_of_files()));
     }
 
-    pub fn print_torrent_files(&self) {
+    pub fn print_torrent_files(&self, ord: SortOrd) {
         println!("\n{} Files:", "==>".green().bold());
         let mut filetree = self.file_tree();
-        filetree.sort_by_name();
+        filetree.sort_by_size(ord);
         filetree.print();
     }
 }

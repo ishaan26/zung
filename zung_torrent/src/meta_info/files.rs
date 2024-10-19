@@ -60,13 +60,24 @@ pub struct FileTree<'a> {
     pub(crate) num_of_files: usize,
 }
 
+pub enum SortOrd {
+    Ascending,
+    Desending,
+}
+
 impl<'a> FileTree<'a> {
-    pub fn sort_by_name(&mut self) {
-        self.node.sort_by_name();
+    pub fn sort_by_name(&mut self, ord: SortOrd) {
+        match ord {
+            SortOrd::Ascending => self.node.sort_by_name_ascending(),
+            SortOrd::Desending => self.node.sort_by_name_desending(),
+        }
     }
 
-    pub fn sort_by_size(&mut self) {
-        self.node.sort_by_size();
+    pub fn sort_by_size(&mut self, ord: SortOrd) {
+        match ord {
+            SortOrd::Ascending => self.node.sort_by_size_ascending(),
+            SortOrd::Desending => self.node.sort_by_size_desending(),
+        }
     }
 
     /// Recursively prints the file tree to stdout in a custom human-readable format, using
@@ -162,13 +173,13 @@ impl<'a> FileNode<'a> {
     }
 
     #[inline]
-    fn sort_by_name(&mut self) {
+    fn sort_by_name_ascending(&mut self) {
         match self {
             FileNode::Dir { children, .. } => {
                 children.sort_by(|k1, _, k2, _| k1.to_lowercase().cmp(&k2.to_lowercase()));
 
                 for child in children.values_mut() {
-                    child.sort_by_name();
+                    child.sort_by_name_ascending();
                 }
             }
             FileNode::File { .. } => (),
@@ -176,13 +187,41 @@ impl<'a> FileNode<'a> {
     }
 
     #[inline]
-    fn sort_by_size(&mut self) {
+    fn sort_by_name_desending(&mut self) {
+        match self {
+            FileNode::Dir { children, .. } => {
+                children.sort_by(|k1, _, k2, _| k2.to_lowercase().cmp(&k1.to_lowercase()));
+
+                for child in children.values_mut() {
+                    child.sort_by_name_ascending();
+                }
+            }
+            FileNode::File { .. } => (),
+        }
+    }
+
+    #[inline]
+    fn sort_by_size_ascending(&mut self) {
         match self {
             FileNode::Dir { children, .. } => {
                 children.sort_by(|_, v1, _, v2| v1.len().cmp(&v2.len()));
 
                 for child in children.values_mut() {
-                    child.sort_by_size();
+                    child.sort_by_size_ascending();
+                }
+            }
+            FileNode::File { .. } => (),
+        }
+    }
+
+    #[inline]
+    fn sort_by_size_desending(&mut self) {
+        match self {
+            FileNode::Dir { children, .. } => {
+                children.sort_by(|_, v1, _, v2| v2.len().cmp(&v1.len()));
+
+                for child in children.values_mut() {
+                    child.sort_by_size_ascending();
                 }
             }
             FileNode::File { .. } => (),

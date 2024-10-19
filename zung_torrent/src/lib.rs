@@ -9,6 +9,7 @@ mod client;
 pub use client::Client;
 
 use clap::{Args, Subcommand, ValueEnum};
+use meta_info::SortOrd;
 use std::path::PathBuf;
 
 #[derive(Debug, Args)]
@@ -54,7 +55,7 @@ impl TorrentArgs {
                 let torrent = Client::new(&file)?;
                 torrent.print_torrent_info();
                 if with_files {
-                    torrent.print_torrent_files();
+                    torrent.print_torrent_files(SortOrd::Ascending);
                 }
             }
         }
