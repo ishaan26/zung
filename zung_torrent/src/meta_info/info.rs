@@ -64,13 +64,15 @@ pub struct Info {
 }
 
 impl<'a> Info {
+    /// Total size of the torrent in bytes;
     pub(crate) fn torrent_size(&self) -> usize {
         let n_pieces = self.pieces.len();
         let plen = self.piece_length;
-        // Number of pieces * length of each piece gives us the total size of the torrent.
+        // Number of pieces * piece_length of each piece gives us the total size of the torrent.
         n_pieces * plen
     }
 
+    /// Builds the file tree of the torrent file.
     pub(crate) fn build_file_tree(&'a self) -> FileTree<'a> {
         // self.files enum is constructed while deserializing the torrent file.
         match &self.files {
@@ -87,7 +89,10 @@ impl<'a> Info {
                         length: *length,
                     }
                 };
-                FileTree { node, n: 1 }
+                FileTree {
+                    node,
+                    num_of_files: 1,
+                } // File count is 1 of singlefile state. duh.
             }
             Files::MultiFile { files } => {
                 if let Some(name) = &self.name {
@@ -99,7 +104,10 @@ impl<'a> Info {
                         root.add_child(file_path, file.length);
                         n += 1;
                     }
-                    FileTree { node: root, n }
+                    FileTree {
+                        node: root,
+                        num_of_files: n,
+                    }
                 } else {
                     panic!("The torrent has no root folder")
                 }
@@ -116,9 +124,9 @@ pub struct InfoHash {
 
 impl InfoHash {
     pub(crate) fn new(bytes: &[u8]) -> Self {
-        let mut m = sha1_smol::Sha1::new();
-        m.update(bytes);
-        InfoHash { sha1: m }
+        let mut sha1 = sha1_smol::Sha1::new();
+        sha1.update(bytes);
+        InfoHash { sha1 }
     }
 
     /// Returns the infohash sha1 value as bytes

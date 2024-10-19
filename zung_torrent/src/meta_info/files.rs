@@ -1,6 +1,7 @@
-use std::{borrow::Cow, collections::BTreeMap};
+use std::borrow::Cow;
 
 use human_bytes::human_bytes;
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 const PADDING_FILE_IDENTIFIER: &str = ".___";
@@ -52,27 +53,39 @@ pub struct MultiFiles {
     pub(crate) path: Vec<String>,
 }
 
+/// Constructed files tree from a torrent file.
 #[derive(Debug, Clone)]
 pub struct FileTree<'a> {
     pub(crate) node: FileNode<'a>,
-    pub(crate) n: usize,
+    pub(crate) num_of_files: usize,
 }
 
 impl<'a> FileTree<'a> {
-    pub fn print_file_tree(&self) {
+    pub fn sort_by_name(&mut self) {
+        self.node.sort_by_name();
+    }
+
+    pub fn sort_by_size(&mut self) {
+        self.node.sort_by_size();
+    }
+
+    /// Recursively prints the file tree to stdout in a custom human-readable format, using
+    /// indentation.
+    #[cfg(feature = "client")]
+    pub fn print(&self) {
         self.node.print_tree(4);
     }
 
     pub fn number_of_files(&self) -> usize {
-        self.n
+        self.num_of_files
     }
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum FileNode<'a> {
     Dir {
         parent: Cow<'a, str>,
-        children: BTreeMap<String, FileNode<'a>>,
+        children: IndexMap<String, FileNode<'a>>,
         length: usize,
     },
     File {
@@ -85,14 +98,16 @@ pub(crate) enum FileNode<'a> {
 ///
 /// This is build with the [`build_file_tree`](super::Info::build_file_tree) method.
 impl<'a> FileNode<'a> {
+    #[inline]
     pub(crate) fn new_dir(name: &'a str) -> Self {
         FileNode::Dir {
             parent: Cow::from(name),
-            children: BTreeMap::new(),
+            children: IndexMap::new(),
             length: 0,
         }
     }
 
+    #[inline]
     pub(crate) fn new_file(name: &'a str, length: usize) -> Self {
         FileNode::File {
             name: Cow::from(name),
@@ -100,6 +115,7 @@ impl<'a> FileNode<'a> {
         }
     }
 
+    #[inline]
     pub(crate) fn add_child(&mut self, path: &'a [String], size: usize) {
         if path.is_empty() {
             return;
@@ -137,12 +153,49 @@ impl<'a> FileNode<'a> {
         }
     }
 
+    #[inline]
+    fn len(&self) -> usize {
+        match self {
+            FileNode::Dir { length, .. } => *length,
+            FileNode::File { length, .. } => *length,
+        }
+    }
+
+    #[inline]
+    fn sort_by_name(&mut self) {
+        match self {
+            FileNode::Dir { children, .. } => {
+                children.sort_by(|k1, _, k2, _| k1.to_lowercase().cmp(&k2.to_lowercase()));
+
+                for child in children.values_mut() {
+                    child.sort_by_name();
+                }
+            }
+            FileNode::File { .. } => (),
+        }
+    }
+
+    #[inline]
+    fn sort_by_size(&mut self) {
+        match self {
+            FileNode::Dir { children, .. } => {
+                children.sort_by(|_, v1, _, v2| v1.len().cmp(&v2.len()));
+
+                for child in children.values_mut() {
+                    child.sort_by_size();
+                }
+            }
+            FileNode::File { .. } => (),
+        }
+    }
+
     /// Recursively prints the file tree in a human-readable format, using indentation.
     ///
     /// ## Arguments:
     ///
     /// `indent`: Indentation step to use for printing child data in the file structure hirarcy.
     #[cfg(feature = "client")]
+    #[inline]
     fn print_tree(&self, mut indent: usize) {
         use colored::Colorize;
 

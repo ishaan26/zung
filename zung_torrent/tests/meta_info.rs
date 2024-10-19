@@ -11,17 +11,14 @@ impl TestMetaInfo {
     fn new() -> Self {
         let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         path.push("tests/sample_torrents/archlinux-2024.04.01-x86_64.iso.torrent");
-
         let arch = Client::new(path).expect("Unable to open the arch torrrent");
 
         let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         path.push("tests/sample_torrents/MIT6.00SCS11_archive.torrent");
-
         let mit = Client::new(path).expect("Unable to read mit torrent");
 
         let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         path.push("tests/sample_torrents/kali-linux-2024.1-installer-amd64.iso.torrent");
-
         let kali = Client::new(path).expect("Unable to read kali torrent");
 
         TestMetaInfo { arch, mit, kali }

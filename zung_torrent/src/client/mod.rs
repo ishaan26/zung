@@ -71,6 +71,24 @@ impl Client {
         &self.file_name
     }
 
+    pub fn info_hash(&self) -> &InfoHash {
+        &self.info_hash
+    }
+
+    pub fn file_tree(&self) -> FileTree<'_> {
+        let tree = self.meta_info.info.build_file_tree();
+        if self.num_files.get().is_none() {
+            self.num_files.set(tree.num_of_files).unwrap(); // num_files is None.
+        }
+        tree
+    }
+
+    pub fn number_of_files(&self) -> usize {
+        *self
+            .num_files
+            .get_or_init(|| self.meta_info.info().build_file_tree().number_of_files())
+    }
+
     pub fn print_torrent_info(&self) {
         println!("\"{}\" ", self.file_name.magenta().bold().underline(),);
 
@@ -127,25 +145,9 @@ impl Client {
 
     pub fn print_torrent_files(&self) {
         println!("\n{} Files:", "==>".green().bold());
-        self.file_tree().print_file_tree();
-    }
-
-    pub fn info_hash(&self) -> &InfoHash {
-        &self.info_hash
-    }
-
-    pub fn file_tree(&self) -> FileTree<'_> {
-        let tree = self.meta_info.info.build_file_tree();
-        if self.num_files.get().is_none() {
-            self.num_files.set(tree.n).unwrap(); // num_files is None.
-        }
-        tree
-    }
-
-    pub fn number_of_files(&self) -> usize {
-        *self
-            .num_files
-            .get_or_init(|| self.meta_info.info().build_file_tree().number_of_files())
+        let mut filetree = self.file_tree();
+        filetree.sort_by_name();
+        filetree.print();
     }
 }
 
