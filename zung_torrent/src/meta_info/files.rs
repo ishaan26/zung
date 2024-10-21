@@ -1,10 +1,8 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, fmt::Display};
 
 use human_bytes::human_bytes;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-
-const PADDING_FILE_IDENTIFIER: &str = ".___";
 
 /// Reprasents the the single file or multi file state of the torrent file.
 ///
@@ -25,8 +23,15 @@ pub enum Files {
         // length of the file in bytes (integer)
         length: usize,
 
-        // (optional) a 32-character hexadecimal string corresponding to the MD5 sum of the file. This is not used by BitTorrent at all, but it is included by some programs for greater compatibility.
+        // (optional) a 32-character hexadecimal string corresponding to the MD5 sum of the file.
+        // This is not used by BitTorrent at all, but it is included by some programs for greater
+        // compatibility.
         md5sum: Option<String>,
+
+        // A variable-length string. When present the characters each represent a file attribute. l
+        // = symlink, x = executable, h = hidden, p = padding file. Characters appear in no
+        // particular order and unknown characters should be ignored.
+        attr: Option<FileAttr>,
     },
     MultiFile {
         // a list of dictionaries, one for each file. Each dictionary in this list contains the following keys:
@@ -51,6 +56,107 @@ pub struct MultiFiles {
     // string elements: "dir1", "dir2", and "file.ext". This is encoded as a bencoded list of
     // strings such as l4:dir14:dir28:file.exte
     pub(crate) path: Vec<String>,
+
+    // A variable-length string. When present the characters each represent a file attribute. l
+    // = symlink, x = executable, h = hidden, p = padding file. Characters appear in no
+    // particular order and unknown characters should be ignored.
+    pub(crate) attr: Option<FileAttr>,
+}
+
+/// Reprasents the various values of a attr field within files of the torrent.
+///
+/// From [BEP 47](https://www.bittorrent.org/beps/bep_0047.html)
+#[derive(Debug)]
+pub enum FileAttr {
+    /// Padding files are synthetic files inserted into the file list to let the following file
+    /// start at a piece boundary. That means their length should fill up the remainder of the
+    /// piece length of the file that is supposed to be padded. For the calculation of piece hashes
+    /// the content of padding file is all zeros.
+    ///
+    /// Clients aware of this extension don't need to write the padding files to disk and should
+    /// also avoid requesting byte-ranges covering their contents, e.g. via request messages. But
+    /// for backwards-compatibility they must service such requests.
+    ///
+    /// While clients implementing this extensions will have no use for the path of a padding file
+    /// it should be included for backwards compatibility since it is a mandatory field in BEP 3
+    /// [1]. The recommended path is [".pad", "N"] where N is the length of the padding file in
+    /// base10. This way clients not aware of this extension will write the padding files into a
+    /// single directory, potentially re-using padding files from other torrents also stored in
+    /// that directory.
+    ///
+    /// To eventually allow the path field to be omitted clients implementing this BEP should not
+    /// require it to be present on padding files.
+    ///
+    /// Piece-aligned files simplify deduplication [2] and the operations on mutable torrents [3].
+    ///
+    /// The presence of padding files does not imply that all files are piece-aligned.
+    Padding,
+
+    /// When the l attribute flag is present then the symlink path represents the target of the symlink
+    /// while path indicates the location of the symlink itself.
+    ///
+    /// The length of a symlink is always zero since it just points to another file already present
+    /// in the piece space. For backwards compatibility the length=0 should be included when
+    /// creating a torrent but clients implementing with this BEP should not require their presence
+    /// on symlink files when parsing it so it can be omitted at some point in the future.
+    ///
+    /// Just like the regular path the symlink path is relative to the torrent root and must not
+    /// contain .. elements. It should also target another file within the torrent, otherwise a
+    /// dangling symlink will be created.
+    Symlink,
+
+    Executable,
+
+    Hidden,
+
+    None,
+}
+
+impl Default for FileAttr {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+impl Display for FileAttr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let v = match self {
+            FileAttr::Padding => "p",
+            FileAttr::Symlink => "l",
+            FileAttr::Executable => "x",
+            FileAttr::Hidden => "h",
+            FileAttr::None => "",
+        };
+
+        write!(f, "{v}")
+    }
+}
+
+impl Serialize for FileAttr {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for FileAttr {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match s.as_str() {
+            "p" => Ok(FileAttr::Padding),
+            "l" => Ok(FileAttr::Symlink),
+            "x" => Ok(FileAttr::Executable),
+            "h" => Ok(FileAttr::Hidden),
+            t => Err(serde::de::Error::custom(format!(
+                "Found attribute: '{t}' which is not a valid file attribute"
+            ))),
+        }
+    }
 }
 
 /// Constructed files tree from a torrent file.
@@ -141,20 +247,18 @@ impl<'a> FileNode<'a> {
                 }
 
                 let current = path.first().unwrap();
-                if !current.starts_with(PADDING_FILE_IDENTIFIER) {
-                    let child = children
-                        .entry(current.clone())
-                        .or_insert_with(|| FileNode::new_dir(current));
+                let child = children
+                    .entry(current.clone())
+                    .or_insert_with(|| FileNode::new_dir(current));
 
-                    // Add sub directories recursively. The the last entry in the files list is hit,
-                    // change FilesNode::Dir entry to FilesNode::Files
-                    if path.len() > 1 {
-                        *length += size;
-                        child.add_child(&path[1..], size);
-                    } else {
-                        *child = FileNode::new_file(current, size);
-                        *length += size;
-                    }
+                // Add sub directories recursively. The the last entry in the files list is hit,
+                // change FilesNode::Dir entry to FilesNode::Files
+                if path.len() > 1 {
+                    *length += size;
+                    child.add_child(&path[1..], size);
+                } else {
+                    *child = FileNode::new_file(current, size);
+                    *length += size;
                 }
             }
             FileNode::File { .. } => {

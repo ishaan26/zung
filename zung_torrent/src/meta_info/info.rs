@@ -6,9 +6,11 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use super::{
-    files::{FileNode, FileTree, Files},
+    files::{FileAttr, FileNode, FileTree, Files},
     pieces::Pieces,
 };
+
+// const PADDING_FILE_IDENTIFIER: &str = ".___";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Info {
@@ -77,7 +79,12 @@ impl<'a> Info {
         // self.files enum is constructed while deserializing the torrent file.
         match &self.files {
             // TODO: Support for md5sum
-            Files::SingleFile { length, md5sum: _ } => {
+            Files::SingleFile {
+                length,
+                md5sum: _,
+                attr,
+            } => {
+                dbg!(attr);
                 let node = if let Some(name) = &self.name {
                     FileNode::File {
                         name: Cow::from(name),
@@ -97,16 +104,20 @@ impl<'a> Info {
             Files::MultiFile { files } => {
                 if let Some(name) = &self.name {
                     let mut root = FileNode::new_dir(name);
-                    let mut n = 0;
+                    let mut num_of_files = 0;
                     for file in files {
+                        if let Some(FileAttr::Padding) = file.attr {
+                            continue;
+                        }
+
                         let path = &file.path;
-                        let file_path = &path[..path.len()];
-                        root.add_child(file_path, file.length);
-                        n += 1;
+
+                        root.add_child(path, file.length);
+                        num_of_files += 1;
                     }
                     FileTree {
                         node: root,
-                        num_of_files: n,
+                        num_of_files,
                     }
                 } else {
                     panic!("The torrent has no root folder")
@@ -179,6 +190,7 @@ mod tests {
             files: Files::SingleFile {
                 length: 4096,
                 md5sum: None,
+                attr: None,
             },
             name: Some("test_file.txt".to_string()),
         };
@@ -197,6 +209,7 @@ mod tests {
             files: Files::SingleFile {
                 length: 4096,
                 md5sum: None,
+                attr: None,
             },
             name: Some("test_file.txt".to_string()),
         };
@@ -221,11 +234,13 @@ mod tests {
                 length: 1024,
                 md5sum: None,
                 path: vec!["folder".to_string(), "file1.txt".to_string()],
+                attr: None,
             },
             MultiFiles {
                 length: 2048,
                 md5sum: None,
                 path: vec!["folder".to_string(), "file2.txt".to_string()],
+                attr: None,
             },
         ];
 
@@ -283,6 +298,7 @@ mod tests {
             length: 1024,
             md5sum: None,
             path: vec!["folder".to_string(), "file1.txt".to_string()],
+            attr: None,
         }];
 
         let info = Info {
