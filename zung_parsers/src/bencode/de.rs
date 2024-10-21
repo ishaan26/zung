@@ -184,7 +184,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         V: Visitor<'de>,
     {
         if self.peek_byte()? != b'i' {
-            return Err(Error::InvalidType("Expcted String length".to_string()));
+            return Err(Error::InvalidType("Expected String length".to_string()));
         }
 
         visitor.visit_i64(self.bencode.parse_integer()?)
@@ -261,7 +261,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
                 visitor.visit_string(parsed)
             }
             e => Err(Error::InvalidType(format!(
-                "Expcted String length, found '{}'",
+                "Expected String length, found '{}'",
                 std::str::from_utf8(&[e]).expect("Invalid utf8 character in string len")
             ))),
         }
