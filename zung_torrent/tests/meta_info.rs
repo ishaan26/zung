@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use zung_torrent::*;
+use zung_torrent::client::*;
 
 struct TestMetaInfo {
     arch: Client,

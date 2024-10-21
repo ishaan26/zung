@@ -1,15 +1,21 @@
+//! Methods to interact with a torrent file.
+//!
+//! Meta info files (commonly referred to as `.torrent` files) contains the blueprint of a
+//! torrent. The meta info file is responsible for defining the properties of the torrent,
+//! including information about the tracker, file data, and integrity checks.
+
 mod files;
 mod info;
 mod pieces;
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
+use zung_parsers::bencode;
 
 pub use files::{FileTree, Files, SortOrd};
 pub use info::{Info, InfoHash};
 
 use serde::{Deserialize, Serialize};
-use zung_parsers::bencode;
 
 /// A type reprasenting deserialized [Metainfo files](https://en.wikipedia.org/wiki/Torrent_file)
 /// (also known as .torrent files)
@@ -58,13 +64,28 @@ pub struct MetaInfo {
     pub(crate) encoding: Option<String>,
 }
 
+/// Processors: process information from a torrent file.
 impl MetaInfo {
+    /// Parses and Deserializes bytes read from a torrent file and constructs [`Self`].
+    ///
+    /// Returns an error if parsing and deserialization fails due to invalid torrent data.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
         let meta_info: Self = bencode::from_bytes(bytes)?;
         Ok(meta_info)
     }
 
-    /// Title of the torrent file (if any)
+    pub fn build_file_tree(&self) -> FileTree<'_> {
+        self.info.build_file_tree()
+    }
+
+    pub fn torrent_size(&self) -> usize {
+        self.info.torrent_size()
+    }
+}
+
+/// Getters: These are a set of getter functions to get various keys from a torrent files.
+impl MetaInfo {
+    /// Returns the `title` key of the torrent file (if any)
     pub fn title(&self) -> Option<&String> {
         self.title.as_ref()
     }
@@ -74,7 +95,7 @@ impl MetaInfo {
         self.info.pieces.len()
     }
 
-    /// Returns the creation time of the torrent, in [RFC
+    /// Returns the creation time of the torrent parsed in [RFC
     /// 2822](https://www.rfc-editor.org/rfc/rfc2822) format
     pub fn creation_date(&self) -> Option<String> {
         self.creation_date
@@ -82,7 +103,7 @@ impl MetaInfo {
             .map(|datetime| datetime.to_rfc2822())
     }
 
-    /// Returns the creation the creation time of the torrent, in standard UNIX epoch format.
+    /// Returns the creation time of the torrent, in standard UNIX epoch format.
     pub fn creation_date_raw(&self) -> Option<i64> {
         self.creation_date
     }
@@ -92,22 +113,25 @@ impl MetaInfo {
         self.comment.as_ref()
     }
 
+    /// Returns the `created by` key contained in the torrent file (if any).
     pub fn created_by(&self) -> Option<&String> {
         self.created_by.as_ref()
     }
 
+    /// Returns the `encoding` key contained in the torrent file (if any).
     pub fn encoding(&self) -> Option<&String> {
         self.encoding.as_ref()
     }
 
-    pub fn files(&self) -> &Files {
-        &self.info.files
-    }
-
+    /// Returns a reference to the deserialized `info` dictionary contained in the torrent file.
     pub fn info(&self) -> &Info {
         &self.info
     }
 
+    /// Returns the `announce` key contained in the torrent file (if any).
+    ///
+    /// The `announce` key contains the http url of the tracker of a torrent incase the
+    /// torrent only has a single tracker.
     pub fn announce(&self) -> Option<&String> {
         self.announce.as_ref()
     }
@@ -116,19 +140,24 @@ impl MetaInfo {
         self.url_list.as_ref()
     }
 
+    /// Returns the `announce` key contained in the torrent file (if any).
+    ///
+    /// This is an extension to the official specification (under [BEP: 12 - Multitracker Metadata
+    /// Extension](https://www.bittorrent.org/beps/bep_0012.html)), offering
+    /// backwards-compatibility.
+    ///
+    /// This key refers to a list of lists of URLs that contain a list of tiers of announces. If
+    /// the `announce-list` key is present in a torrent file, [`announce`](self::announce) key will
+    /// be ignored and only this key will be used.
     pub fn announce_list(&self) -> Option<&Vec<Vec<String>>> {
         self.announce_list.as_ref()
     }
 
+    /// Returns the value of the `piece length` from the [`Info`] type.
+    ///
+    /// It is the number of bytes in each piece. The piece length specifies the nominal piece size,
+    /// and is usually a power of 2.     
     pub fn piece_length(&self) -> usize {
         self.info.piece_length
-    }
-
-    pub fn build_file_tree(&self) -> FileTree<'_> {
-        self.info.build_file_tree()
-    }
-
-    pub fn torrent_size(&self) -> usize {
-        self.info.torrent_size()
     }
 }

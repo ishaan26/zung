@@ -10,39 +10,47 @@ use super::{
     pieces::Pieces,
 };
 
-// const PADDING_FILE_IDENTIFIER: &str = ".___";
-
 #[derive(Debug, Serialize, Deserialize)]
+/// Reprasents the `info dictionary` contained in a torrent file.
+///
+/// This type contains keys like `piece length` and `pieces` which are mandartory for all torrents
+/// irrespective of the form of the torrent. There are two possible forms: one for the case of a
+/// 'single-file' torrent with no directory structure, and one for the case of a 'multi-file'
+/// torrent. See the [`Files`] type for more info on these two forms.
+///
+/// This type is not intended to be interacted directly by user of this library. However, a
+/// reference to it can be taken using the [`info`](crate::meta_info::MetaInfo::info) method on the
+/// [`MetaInfo`](crate::meta_info::MetaInfo) type.
 pub struct Info {
-    // number of bytes in each piece (integer).
-    //
-    // The piece length specifies the nominal piece size, and is usually a power of 2. The piece
-    // size is typically chosen based on the total amount of file data in the torrent, and is
-    // constrained by the fact that too-large piece sizes cause inefficiency, and too-small piece
-    // sizes cause large .torrent metadata file. Historically, piece size was chosen to result in a
-    // .torrent file no greater than approx. 50 - 75 kB (presumably to ease the load on the server
-    // hosting the torrent files).
-    //
-    // Current best-practice is to keep the piece size to 512KB or less, for torrents around
-    // 8-10GB, even if that results in a larger .torrent file. This results in a more efficient
-    // swarm for sharing files. The most common sizes are 256 kB, 512 kB, and 1 MB. Every piece is
-    // of equal length except for the final piece, which is irregular. The number of pieces is thus
-    // determined by 'ceil( total length / piece size )'.
-    //
-    // For the purposes of piece boundaries in the multi-file case, consider the file data as
-    // one long continuous stream, composed of the concatenation of each file in the order
-    // listed in the files list. The number of pieces and their boundaries are then determined
-    // in the same manner as the case of a single file. Pieces may overlap file boundaries.
-    //
-    // Each piece has a corresponding SHA1 hash of the data contained within that piece. These
-    // hashes are concatenated to form the pieces value in the above info dictionary. Note that
-    // this is not a list but rather a single string. The length of the string must be a multiple
-    // of 20.
+    /// number of bytes in each piece (integer).
+    ///
+    /// The piece length specifies the nominal piece size, and is usually a power of 2. The piece
+    /// size is typically chosen based on the total amount of file data in the torrent, and is
+    /// constrained by the fact that too-large piece sizes cause inefficiency, and too-small piece
+    /// sizes cause large .torrent metadata file. Historically, piece size was chosen to result in a
+    /// .torrent file no greater than approx. 50 - 75 kB (presumably to ease the load on the server
+    /// hosting the torrent files).
+    ///
+    /// Current best-practice is to keep the piece size to 512KB or less, for torrents around
+    /// 8-10GB, even if that results in a larger .torrent file. This results in a more efficient
+    /// swarm for sharing files. The most common sizes are 256 kB, 512 kB, and 1 MB. Every piece is
+    /// of equal length except for the final piece, which is irregular. The number of pieces is thus
+    /// determined by 'ceil( total length / piece size )'.
+    ///
+    /// For the purposes of piece boundaries in the multi-file case, consider the file data as
+    /// one long continuous stream, composed of the concatenation of each file in the order
+    /// listed in the files list. The number of pieces and their boundaries are then determined
+    /// in the same manner as the case of a single file. Pieces may overlap file boundaries.
+    ///
+    /// Each piece has a corresponding SHA1 hash of the data contained within that piece. These
+    /// hashes are concatenated to form the pieces value in the above info dictionary. Note that
+    /// this is not a list but rather a single string. The length of the string must be a multiple
+    /// of 20.
     #[serde(rename = "piece length")]
     pub(crate) piece_length: usize,
 
-    // string consisting of the concatenation of all 20-byte SHA1 hash values, one per piece (byte
-    // string, i.e. not urlencoded)
+    /// string consisting of the concatenation of all 20-byte SHA1 hash values, one per piece (byte
+    /// string, i.e. not urlencoded)
     pub(crate) pieces: Pieces,
 
     // (optional) this field is an integer. If it is set to "1", the client MUST publish its

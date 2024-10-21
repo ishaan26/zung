@@ -4,6 +4,11 @@ use human_bytes::human_bytes;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
+const PADDING_ATTR: &str = "p";
+const SYMLINK_ATTR: &str = "l";
+const EXECUTABLE_ATTR: &str = "x";
+const HIDDEN_ATTR: &str = "h";
+
 /// Reprasents the the single file or multi file state of the torrent file.
 ///
 /// The both states are reprasented as follows in the enum:
@@ -109,26 +114,18 @@ pub enum FileAttr {
 
     Hidden,
 
-    None,
-}
-
-impl Default for FileAttr {
-    fn default() -> Self {
-        Self::None
-    }
+    Other(String),
 }
 
 impl Display for FileAttr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let v = match self {
-            FileAttr::Padding => "p",
-            FileAttr::Symlink => "l",
-            FileAttr::Executable => "x",
-            FileAttr::Hidden => "h",
-            FileAttr::None => "",
-        };
-
-        write!(f, "{v}")
+        match self {
+            FileAttr::Padding => write!(f, "{PADDING_ATTR}"),
+            FileAttr::Symlink => write!(f, "{SYMLINK_ATTR}"),
+            FileAttr::Executable => write!(f, "{EXECUTABLE_ATTR}"),
+            FileAttr::Hidden => write!(f, "{HIDDEN_ATTR}"),
+            FileAttr::Other(s) => write!(f, "{s}"),
+        }
     }
 }
 
@@ -148,13 +145,13 @@ impl<'de> Deserialize<'de> for FileAttr {
     {
         let s = String::deserialize(deserializer)?;
         match s.as_str() {
-            "p" => Ok(FileAttr::Padding),
-            "l" => Ok(FileAttr::Symlink),
-            "x" => Ok(FileAttr::Executable),
-            "h" => Ok(FileAttr::Hidden),
-            t => Err(serde::de::Error::custom(format!(
-                "Found attribute: '{t}' which is not a valid file attribute"
-            ))),
+            PADDING_ATTR => Ok(FileAttr::Padding),
+            SYMLINK_ATTR => Ok(FileAttr::Symlink),
+            EXECUTABLE_ATTR => Ok(FileAttr::Executable),
+            HIDDEN_ATTR => Ok(FileAttr::Hidden),
+            // NOTE: Rejecting a torrent because of unsupported file attr seems to strict.
+            // TODO: Revisit this.
+            t => Ok(FileAttr::Other(t.to_string())),
         }
     }
 }
@@ -166,6 +163,8 @@ pub struct FileTree<'a> {
     pub(crate) num_of_files: usize,
 }
 
+/// Value enum to be passed as an argument to [`FileTree::sort_by_name`] or
+/// [`FileTree::sort_by_size`]
 pub enum SortOrd {
     Ascending,
     Desending,
