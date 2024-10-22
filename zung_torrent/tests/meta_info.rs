@@ -244,4 +244,13 @@ mod calculators {
             "%f2%4f%4f%54%df%51%11%8b%03%f9%9c%74%41%6e%45%54%ab%88%d2%2b"
         );
     }
+
+    #[test]
+    fn number_of_files() {
+        let tester = TestMetaInfo::new();
+        assert_eq!(tester.arch.number_of_files(), 1);
+        assert_eq!(tester.kali.number_of_files(), 1);
+        assert_eq!(tester.mit.number_of_files(), 154);
+        assert_eq!(tester.mc.number_of_files(), 131934);
+    }
 }

@@ -201,7 +201,6 @@ mod tests {
         let value = Value::Dictionary(dict);
 
         let result = value.to_string();
-        dbg!(&result);
         assert!(result.contains("key1: 10"));
         assert!(result.contains("key2: value"));
     }

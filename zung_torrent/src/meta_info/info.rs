@@ -90,9 +90,8 @@ impl<'a> Info {
             Files::SingleFile {
                 length,
                 md5sum: _,
-                attr,
+                attr: _, // TODO: attr support for single file case?
             } => {
-                dbg!(attr);
                 let node = if let Some(name) = &self.name {
                     FileNode::File {
                         name: Cow::from(name),
