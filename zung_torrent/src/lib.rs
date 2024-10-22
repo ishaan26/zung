@@ -4,13 +4,15 @@ pub mod meta_info;
 use meta_info::MetaInfo;
 
 #[cfg(feature = "client")]
-pub mod client;
-use client::Client;
+mod client;
+pub use client::Client;
 
 use clap::{Args, Subcommand, ValueEnum};
 use meta_info::SortOrd;
 use std::path::PathBuf;
 
+/// Interact with torrent on the commandline. Install the [`zung`](https://crates.io/crates/zung)
+/// crate and run `zung torrent --help` to see what options are available
 #[derive(Debug, Args)]
 #[command(flatten_help = true, subcommand_required = true)]
 pub struct TorrentArgs {
@@ -54,7 +56,7 @@ impl TorrentArgs {
                 let torrent = Client::new(&file)?;
                 torrent.print_torrent_info();
                 if with_files {
-                    torrent.print_torrent_files(SortOrd::Ascending);
+                    torrent.print_files_by_size(SortOrd::Ascending);
                 }
             }
         }

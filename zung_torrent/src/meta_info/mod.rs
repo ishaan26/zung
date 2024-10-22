@@ -1,8 +1,35 @@
-//! Methods to interact with a torrent file.
+//! For parsing, deserializing and processing a torrent file.
 //!
 //! Meta info files (commonly referred to as `.torrent` files) contains the blueprint of a
-//! torrent. The meta info file is responsible for defining the properties of the torrent,
+//! torrent. This file is responsible for defining the properties of the torrent,
 //! including information about the tracker, file data, and integrity checks.
+//!
+//! # Usage
+//!
+//! The torrent file is parsed and deserialized into the [`MetaInfo`] type which provides various
+//! methods to process the information contained within the torrent file.
+//!
+//! Checkout the [tracker](`crate::tracker`) module for communicating with a tracker.
+//!
+//! ## Note
+//!
+//! It is only intended for the users of the library to interact with the [`crate::Client`] module.
+//! However, users wanting lower level interaction may use this module through the  [`MetaInfo`]
+//! type. This type provides to construct or get references to the rest of the types in this
+//! module.
+//!
+//! ## Example
+//!
+//! ```
+//! use zung_torrent::meta_info::MetaInfo;
+//! use std::path::Path;
+//!
+//! fn torrent(file_path: &Path) {
+//!     let file = std::fs::read(file_path).expect("Unable to read the provided file");
+//!     let torrrent = MetaInfo::from_bytes(&file).expect("Invalid torrent file provided");
+//! }
+//!
+//! ```
 
 mod files;
 mod info;
@@ -17,12 +44,12 @@ pub use info::{Info, InfoHash};
 
 use serde::{Deserialize, Serialize};
 
-/// A type reprasenting deserialized [Metainfo files](https://en.wikipedia.org/wiki/Torrent_file)
+/// A type reprasenting a deserialized [Torrent file](https://en.wikipedia.org/wiki/Torrent_file)
 /// (also known as .torrent files)
 ///
-/// Meteinfo files are bencoded dictionaries that contains metadata about files and folders to be
+/// Metainfo files are bencoded dictionaries that contains metadata about files and folders to be
 /// distributed, and usually also: a list of the network locations of
-/// [trackers](https://en.wikipedia.org/wiki/BitTorrent_tracker)
+/// [trackers](https://en.wikipedia.org/wiki/BitTorrent_tracker).
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MetaInfo {
     // A dictionary that describes the file(s) of the torrent. There are two possible forms: one for
@@ -78,7 +105,7 @@ impl MetaInfo {
         self.info.build_file_tree()
     }
 
-    pub fn torrent_size(&self) -> usize {
+    pub fn size(&self) -> usize {
         self.info.torrent_size()
     }
 }
@@ -147,7 +174,7 @@ impl MetaInfo {
     /// backwards-compatibility.
     ///
     /// This key refers to a list of lists of URLs that contain a list of tiers of announces. If
-    /// the `announce-list` key is present in a torrent file, [`announce`](self::announce) key will
+    /// the `announce-list` key is present in a torrent file, [`announce`](MetaInfo::announce) key will
     /// be ignored and only this key will be used.
     pub fn announce_list(&self) -> Option<&Vec<Vec<String>>> {
         self.announce_list.as_ref()

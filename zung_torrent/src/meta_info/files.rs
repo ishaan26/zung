@@ -14,7 +14,8 @@ const HIDDEN_ATTR: &str = "h";
 /// The both states are reprasented as follows in the enum:
 ///
 /// - `SingleFile`: Represents a single file with its length in bytes and an optional MD5 checksum.
-/// - `MultiFile`: Represents multiple files with a vector of [`MultiFiles`] structs.
+/// - `MultiFile`: Represents multiple files with a vector of data containing information about the
+///    file.
 ///
 /// As per the [The BitTorrent Protocol
 /// Specification](https://www.bittorrent.org/beps/bep_0003.html), in a torrent files there is
@@ -70,7 +71,8 @@ pub struct MultiFiles {
 
 /// Reprasents the various values of a attr field within files of the torrent.
 ///
-/// From [BEP 47](https://www.bittorrent.org/beps/bep_0047.html)
+/// This is a bittorent extension as described in [BEP
+/// 47](https://www.bittorrent.org/beps/bep_0047.html)
 #[derive(Debug)]
 pub enum FileAttr {
     /// Padding files are synthetic files inserted into the file list to let the following file

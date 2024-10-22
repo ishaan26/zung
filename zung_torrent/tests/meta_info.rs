@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use zung_torrent::client::*;
+use zung_torrent::*;
 
 struct TestMetaInfo {
     arch: Client,
@@ -167,9 +167,9 @@ mod getters {
     #[test]
     fn torrent_size() {
         let tester = TestMetaInfo::new();
-        assert_eq!(tester.arch.meta_info().torrent_size(), 1001914368);
-        assert_eq!(tester.mit.meta_info().torrent_size(), 13669236736);
-        assert_eq!(tester.kali.meta_info().torrent_size(), 4102553600);
+        assert_eq!(tester.arch.meta_info().size(), 1001914368);
+        assert_eq!(tester.mit.meta_info().size(), 13669236736);
+        assert_eq!(tester.kali.meta_info().size(), 4102553600);
     }
 
     #[test]
