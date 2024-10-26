@@ -44,8 +44,8 @@ pub use info::{Info, InfoHash};
 
 use serde::{Deserialize, Serialize};
 
-/// A type reprasenting a deserialized [Torrent file](https://en.wikipedia.org/wiki/Torrent_file)
-/// (also known as .torrent files)
+/// A type reprasenting a deserialized [metainfo file](https://en.wikipedia.org/wiki/Torrent_file)
+/// (also known as .torrent file)
 ///
 /// Metainfo files are bencoded dictionaries that contains metadata about files and folders to be
 /// distributed, and usually also: a list of the network locations of
