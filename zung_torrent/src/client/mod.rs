@@ -1,3 +1,6 @@
+mod peer_id;
+pub use peer_id::PeerID;
+
 use anyhow::{bail, Result};
 use colored::Colorize;
 use human_bytes::human_bytes;
@@ -16,6 +19,7 @@ pub struct Client {
     meta_info: Arc<MetaInfo>,
     file_name: String,
     info_hash: InfoHash,
+    peer_id: PeerID,
     num_files: OnceCell<usize>, // Cache no. of files when calling either file_tree or
                                 // number_of_files methods.
 }
@@ -80,6 +84,7 @@ impl Client {
                 meta_info,
                 file_name,
                 info_hash,
+                peer_id: PeerID::new(),
                 num_files: OnceCell::new(),
             })
         } else {
@@ -191,6 +196,11 @@ impl Client {
             .get_or_init(|| self.meta_info.info().build_file_tree().number_of_files())
     }
 
+    /// Returns the [`PeerID`] of this [`Client`].
+    pub fn peer_id(&self) -> PeerID {
+        self.peer_id
+    }
+
     /// Prints detailed information about the torrent file, including title, number of pieces,
     /// total size, creation date, and more.
     ///
@@ -208,22 +218,40 @@ impl Client {
     pub fn print_torrent_info(&self) {
         println!("\"{}\" ", self.file_name.magenta().bold().underline(),);
 
-        print_info("Title", self.meta_info.title());
-
-        // Length and pieces details
-        let npieces = self.meta_info.number_of_pieces();
-        let plen = self.meta_info.piece_length();
-        let size = (npieces * plen) as f64;
-
-        println!(
-            "\n{} Number of pieces: {} each {} in size. Total torrent size: {}",
-            "==>".green().bold(),
-            npieces.to_string().bold().cyan(),
-            human_bytes(plen as f64).bold().cyan(),
-            human_bytes(size).bold().cyan()
-        );
+        let info_hash = self.info_hash().to_string();
 
         let mut handle = Vec::new();
+
+        // Title
+        let meta_info = Arc::clone(&self.meta_info);
+        handle.push(thread::spawn(move || {
+            print_info("Title", meta_info.title());
+        }));
+
+        // Length and pieces details
+        let meta_info = Arc::clone(&self.meta_info);
+        handle.push(thread::spawn(move || {
+            let npieces = meta_info.number_of_pieces();
+            let plen = meta_info.piece_length();
+            let size = (npieces * plen) as f64;
+
+            println!(
+                "\n{} Number of pieces: {} each {} in size. Total torrent size: {}",
+                "==>".green().bold(),
+                npieces.to_string().bold().cyan(),
+                human_bytes(plen as f64).bold().cyan(),
+                human_bytes(size).bold().cyan()
+            );
+        }));
+
+        // number of Files
+        let meta_info = Arc::clone(&self.meta_info);
+        handle.push(thread::spawn(move || {
+            print_info(
+                "Number of Files",
+                Some(meta_info.info().build_file_tree().number_of_files()),
+            );
+        }));
 
         // created on
         let meta_info = Arc::clone(&self.meta_info);
@@ -249,14 +277,14 @@ impl Client {
             print_info("Encoded in", meta_info.encoding());
         }));
 
+        // info_hash
+        handle.push(thread::spawn(move || {
+            print_info("Info Hash", Some(info_hash));
+        }));
+
         for h in handle {
             h.join().expect("Failed to print information");
         }
-
-        // info_hash
-        print_info("Info Hash", Some(self.info_hash().to_string()));
-
-        print_info("Number of Files", Some(self.number_of_files()));
     }
 
     /// Prints a list of all files in the torrent, sorted by size.

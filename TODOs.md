@@ -7,7 +7,7 @@
 
 ## ZUNG_TORRENT
 
-- FileTree to be cached after it is lazily built using the file_tree methond on the client.
 - FileTree should be indexable.
+- Infohash should be calculated by the MetaInfo type and not the client. I think.
 - Implement Trackers.
 - Write tests.

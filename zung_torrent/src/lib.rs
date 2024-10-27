@@ -6,8 +6,9 @@ use meta_info::MetaInfo;
 #[cfg(feature = "client")]
 mod client;
 pub use client::Client;
+pub use client::PeerID;
 
-use clap::{Args, Subcommand, ValueEnum};
+use clap::{Args, Subcommand};
 use meta_info::SortOrd;
 use std::path::PathBuf;
 
@@ -34,18 +35,6 @@ enum TorrentCommands {
         #[arg(long, required = false)]
         with_files: bool,
     },
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
-enum Format {
-    /// Convert to json format
-    Json,
-
-    /// Convert to yaml format
-    Yaml,
-
-    /// Convert to toml format
-    Toml,
 }
 
 impl TorrentArgs {
