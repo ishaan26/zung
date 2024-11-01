@@ -1,12 +1,13 @@
 #![doc = include_str!("../README.md")]
 
-pub mod meta_info;
-use meta_info::MetaInfo;
-
 #[cfg(feature = "client")]
 mod client;
+pub mod meta_info;
+pub mod trackers;
+
 pub use client::Client;
 pub use client::PeerID;
+use meta_info::MetaInfo;
 
 use clap::{Args, Subcommand};
 use meta_info::SortOrd;

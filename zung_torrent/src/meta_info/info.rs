@@ -152,7 +152,7 @@ impl InfoHash {
         self.sha1.digest().bytes()
     }
 
-    /// Url-encodes the infohash value for communication with a [`Tracker`](crate::Trackers)
+    /// Url-encodes the infohash value for communication with a [`tracker`](crate::trackers)
     pub fn to_url_encoded(&self) -> String {
         let bytes = self.as_bytes();
         let mut buff = String::with_capacity(60);
