@@ -30,5 +30,9 @@ human_bytes = { version = "0.4.3", optional = true }
 
 serde = { version = "1.0.210", features = ["derive"] }
 serde_bytes = "0.11.15"
+serde_urlencoded = "0.7.1"
 
 zung_parsers = { version = "0.1.1", path = "../zung_parsers" }
+
+[dev-dependencies]
+utilities = { path = "../utilities" }

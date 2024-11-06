@@ -4,6 +4,7 @@ use std::{
 };
 
 use rand::Rng;
+use serde::Serialize;
 
 const PEERID_SIZE: u8 = 20;
 
@@ -149,6 +150,15 @@ impl Default for PeerID {
     }
 }
 
+impl Serialize for PeerID {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_url_encoded())
+    }
+}
+
 impl Display for PeerID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // using from_utf8_unchecked because the start, uid and the end fields are all hardcoded
@@ -205,13 +215,13 @@ fn get_system_time_bytes() -> [u8; 12] {
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards");
 
-    let millis = duration.as_millis().to_be_bytes();
+    let millis = duration.as_nanos().to_be_bytes();
     let mut rng = rand::thread_rng();
     let random: u32 = rng.gen();
 
     // Combine 8 bytes of millis with 4 bytes of randomness
     let mut result = [0u8; 12];
-    result[..8].copy_from_slice(&millis[0..8]);
+    result[..8].copy_from_slice(&millis[8..16]);
     result[8..].copy_from_slice(&random.to_be_bytes());
     result
 }

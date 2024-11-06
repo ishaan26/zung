@@ -36,6 +36,16 @@ enum TorrentCommands {
         #[arg(long, required = false)]
         with_files: bool,
     },
+
+    Trackers {
+        /// Torrent File to process
+        #[arg(short, long, required = true)]
+        file: PathBuf,
+
+        /// Prints the url generated for making a GET request to the Tracker.
+        #[arg(long, required = false)]
+        request_url: bool,
+    },
 }
 
 impl TorrentArgs {
@@ -43,10 +53,25 @@ impl TorrentArgs {
         // Run the commands
         match self.command {
             TorrentCommands::Info { file, with_files } => {
-                let torrent = Client::new(&file)?;
+                let torrent = Client::new(file)?;
+
                 torrent.print_torrent_info();
                 if with_files {
                     torrent.print_files_by_size(SortOrd::Ascending);
+                }
+            }
+            TorrentCommands::Trackers { file, request_url } => {
+                let torrent = Client::new(file)?;
+
+                if request_url {
+                    let tr = torrent
+                        .tracker_request()
+                        .expect("Unable to build the tracker request");
+                    let url = tr
+                        .to_url()
+                        .expect("Tracker request contains invalid fields");
+
+                    println!("{url}");
                 }
             }
         }

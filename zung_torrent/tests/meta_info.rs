@@ -1,41 +1,4 @@
-use std::path::PathBuf;
-use zung_torrent::*;
-
-struct TestMetaInfo {
-    arch: Client,
-    mit: Client,
-    kali: Client,
-    mc: Client,
-}
-
-impl TestMetaInfo {
-    fn new() -> Self {
-        // Contains only url-list and no announce field
-        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        path.push("tests/sample_torrents/archlinux-2024.04.01-x86_64.iso.torrent");
-        let arch = Client::new(path).expect("Unable to open the arch torrrent");
-
-        // Contains both url-list and announce field
-        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        path.push("tests/sample_torrents/MIT6.00SCS11_archive.torrent");
-        let mit = Client::new(path).expect("Unable to read mit torrent");
-
-        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        path.push("tests/sample_torrents/kali-linux-2024.1-installer-amd64.iso.torrent");
-        let kali = Client::new(path).expect("Unable to read kali torrent");
-
-        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        path.push("tests/sample_torrents/MC_GRID-7f06f8280a3b496f2af0f78131ced619df14a0c3.torrent");
-        let mc = Client::new(path).expect("Unable to read kali torrent");
-
-        TestMetaInfo {
-            arch,
-            mit,
-            kali,
-            mc,
-        }
-    }
-}
+use utilities::torrent::TestClient;
 
 // Values directly parsed and extracted from a torrent file.
 mod getters {
@@ -43,7 +6,7 @@ mod getters {
 
     #[test]
     fn title() {
-        let tester = TestMetaInfo::new();
+        let tester = TestClient::new();
 
         assert_eq!(tester.arch.meta_info().title(), None);
         assert_eq!(
@@ -55,7 +18,7 @@ mod getters {
 
     #[test]
     fn announce() {
-        let tester = TestMetaInfo::new();
+        let tester = TestClient::new();
 
         assert_eq!(tester.arch.meta_info().announce(), None);
         assert_eq!(
@@ -70,7 +33,7 @@ mod getters {
 
     #[test]
     fn number_of_pieces() {
-        let tester = TestMetaInfo::new();
+        let tester = TestClient::new();
 
         assert_eq!(tester.arch.meta_info().number_of_pieces(), 1911);
         assert_eq!(tester.mit.meta_info().number_of_pieces(), 3259);
@@ -79,7 +42,7 @@ mod getters {
 
     #[test]
     fn creation_date() {
-        let tester = TestMetaInfo::new();
+        let tester = TestClient::new();
         assert_eq!(
             tester.arch.meta_info().creation_date().unwrap(),
             "Mon, 1 Apr 2024 18:00:29 +0000"
@@ -96,7 +59,7 @@ mod getters {
 
     #[test]
     fn creation_date_raw() {
-        let tester = TestMetaInfo::new();
+        let tester = TestClient::new();
         assert_eq!(
             tester.arch.meta_info().creation_date_raw().unwrap(),
             1711994429
@@ -113,7 +76,7 @@ mod getters {
 
     #[test]
     fn comment() {
-        let tester = TestMetaInfo::new();
+        let tester = TestClient::new();
 
         assert_eq!(
             tester.arch.meta_info().comment(),
@@ -133,7 +96,7 @@ mod getters {
 
     #[test]
     fn created_by() {
-        let tester = TestMetaInfo::new();
+        let tester = TestClient::new();
         assert_eq!(
             tester.arch.meta_info().created_by().unwrap(),
             "mktorrent 1.1"
@@ -150,7 +113,7 @@ mod getters {
 
     #[test]
     fn encoding() {
-        let tester = TestMetaInfo::new();
+        let tester = TestClient::new();
         assert!(tester.arch.meta_info().encoding().is_none());
         assert!(tester.mit.meta_info().encoding().is_none());
         assert!(tester.kali.meta_info().encoding().is_none());
@@ -158,7 +121,7 @@ mod getters {
 
     #[test]
     fn piece_length() {
-        let tester = TestMetaInfo::new();
+        let tester = TestClient::new();
         assert_eq!(tester.arch.meta_info().piece_length(), 524288);
         assert_eq!(tester.mit.meta_info().piece_length(), 4194304);
         assert_eq!(tester.kali.meta_info().piece_length(), 262144);
@@ -166,7 +129,7 @@ mod getters {
 
     #[test]
     fn torrent_size() {
-        let tester = TestMetaInfo::new();
+        let tester = TestClient::new();
         assert_eq!(tester.arch.meta_info().size(), 1001914368);
         assert_eq!(tester.mit.meta_info().size(), 13669236736);
         assert_eq!(tester.kali.meta_info().size(), 4102553600);
@@ -174,7 +137,7 @@ mod getters {
 
     #[test]
     fn url_list() {
-        let tester = TestMetaInfo::new();
+        let tester = TestClient::new();
         assert!(tester.arch.meta_info().url_list().is_some());
         assert!(tester.mit.meta_info().url_list().is_some());
         assert!(tester.kali.meta_info().url_list().is_some());
@@ -185,7 +148,7 @@ mod getters {
 
     #[test]
     fn announce_list() {
-        let tester = TestMetaInfo::new();
+        let tester = TestClient::new();
         assert!(tester.arch.meta_info().announce_list().is_none());
         assert!(tester.mit.meta_info().announce_list().is_some());
         assert!(tester.kali.meta_info().announce_list().is_some());
@@ -199,7 +162,7 @@ mod calculators {
 
     #[test]
     fn info_hash_to_string() {
-        let tester = TestMetaInfo::new();
+        let tester = TestClient::new();
         let arch = tester.arch.info_hash().to_string();
         let mit = tester.mit.info_hash().to_string();
         let kali = tester.kali.info_hash().to_string();
@@ -212,7 +175,7 @@ mod calculators {
 
     #[test]
     fn info_hash_as_bytes() {
-        let tester = TestMetaInfo::new();
+        let tester = TestClient::new();
         let arch = hex::encode(tester.arch.info_hash().as_bytes());
         let mit = hex::encode(tester.mit.info_hash().as_bytes());
         let kali = hex::encode(tester.kali.info_hash().as_bytes());
@@ -225,7 +188,7 @@ mod calculators {
 
     #[test]
     fn info_hash_url_encode() {
-        let tester = TestMetaInfo::new();
+        let tester = TestClient::new();
         let arch = tester.arch.info_hash().to_url_encoded();
         let mit = tester.mit.info_hash().to_url_encoded();
         let kali = tester.kali.info_hash().to_url_encoded();
@@ -247,7 +210,7 @@ mod calculators {
 
     #[test]
     fn number_of_files() {
-        let tester = TestMetaInfo::new();
+        let tester = TestClient::new();
         assert_eq!(tester.arch.number_of_files(), 1);
         assert_eq!(tester.kali.number_of_files(), 1);
         assert_eq!(tester.mit.number_of_files(), 154);

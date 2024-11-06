@@ -10,6 +10,7 @@ use std::{cell::OnceCell, fmt::Display, path::Path, sync::Arc, thread};
 
 use crate::{
     meta_info::{FileTree, InfoHash, SortOrd},
+    trackers::TrackerRequest,
     MetaInfo,
 };
 
@@ -334,6 +335,21 @@ impl Client {
         let mut filetree = self.file_tree();
         filetree.sort_by_size(ord);
         filetree.print();
+    }
+
+    pub fn tracker_request(&self) -> Result<TrackerRequest> {
+        /// TODO: THis is just make-shift. To be handled properly.
+        let url = if let Some(announce) = &self.meta_info.announce {
+            announce
+        } else if let Some(announce_list) = &self.meta_info.announce_list {
+            &announce_list[0][0]
+        } else if let Some(url_list) = &self.meta_info.url_list {
+            &url_list[0]
+        } else {
+            bail!("No url found in the torrent file")
+        };
+
+        Ok(TrackerRequest::new(url, &self.info_hash, self.peer_id))
     }
 }
 
