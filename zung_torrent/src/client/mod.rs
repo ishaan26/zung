@@ -338,7 +338,7 @@ impl Client {
     }
 
     pub fn tracker_request(&self) -> Result<TrackerRequest> {
-        /// TODO: THis is just make-shift. To be handled properly.
+        // TODO: THis is just make-shift. To be handled properly.
         let url = if let Some(announce) = &self.meta_info.announce {
             announce
         } else if let Some(announce_list) = &self.meta_info.announce_list {
