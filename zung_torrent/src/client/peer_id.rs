@@ -132,7 +132,7 @@ impl PeerID {
         hex::encode(self.as_bytes())
     }
 
-    /// Url-encodes the [`PeerID`] value for communication with a [`Tracker`](crate::trackers)
+    /// Url-encodes the [`PeerID`] value for communication with a torrent Tracker;
     pub fn to_url_encoded(&self) -> String {
         let bytes = self.as_bytes();
         let mut buff = String::with_capacity(60);

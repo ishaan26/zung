@@ -3,7 +3,7 @@
 #[cfg(feature = "client")]
 mod client;
 pub mod meta_info;
-pub mod trackers;
+pub mod sources;
 
 pub use client::Client;
 pub use client::PeerID;
@@ -37,7 +37,7 @@ enum TorrentCommands {
         with_files: bool,
     },
 
-    Trackers {
+    Sources {
         /// Torrent File to process
         #[arg(short, long, required = true)]
         file: PathBuf,
@@ -60,18 +60,11 @@ impl TorrentArgs {
                     torrent.print_files_by_size(SortOrd::Ascending);
                 }
             }
-            TorrentCommands::Trackers { file, request_url } => {
+            TorrentCommands::Sources { file, request_url } => {
                 let torrent = Client::new(file)?;
 
                 if request_url {
-                    let tr = torrent
-                        .tracker_request()
-                        .expect("Unable to build the tracker request");
-                    let url = tr
-                        .to_url()
-                        .expect("Tracker request contains invalid fields");
-
-                    println!("{url}");
+                    torrent.print_sources();
                 }
             }
         }

@@ -1,3 +1,5 @@
+//! For handleing torrent tracker requests and responses.
+//!
 //! The tracker is an HTTP/HTTPS service which responds to HTTP GET requests. The requests include
 //! metrics from clients that help the tracker keep overall statistics about the torrent. The
 //! response includes a peer list that helps the client participate in the torrent. The base URL

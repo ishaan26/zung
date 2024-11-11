@@ -70,7 +70,7 @@ pub struct Info {
 
     // In the single file state this is the filename. In the multifile state this is the the name
     // of the directory in which to store all the files. This is purely advisory. (string)
-    pub(crate) name: Option<String>,
+    pub(crate) name: String,
 }
 
 impl<'a> Info {
@@ -92,16 +92,9 @@ impl<'a> Info {
                 md5sum: _,
                 attr: _, // TODO: attr support for single file case?
             } => {
-                let node = if let Some(name) = &self.name {
-                    FileNode::File {
-                        name: Cow::from(name),
-                        length: *length,
-                    }
-                } else {
-                    FileNode::File {
-                        name: Cow::from("__No Name__"),
-                        length: *length,
-                    }
+                let node = FileNode::File {
+                    name: Cow::from(&self.name),
+                    length: *length,
                 };
                 FileTree {
                     node,
@@ -109,28 +102,28 @@ impl<'a> Info {
                 } // File count is 1 of singlefile state. duh.
             }
             Files::MultiFile { files } => {
-                if let Some(name) = &self.name {
-                    let mut root = FileNode::new_dir(name);
-                    let mut num_of_files = 0;
-                    for file in files {
-                        if let Some(FileAttr::Padding) = file.attr {
-                            continue;
-                        }
-
-                        let path = &file.path;
-
-                        root.add_child(path, file.length);
-                        num_of_files += 1;
+                let mut root = FileNode::new_dir(&self.name);
+                let mut num_of_files = 0;
+                for file in files {
+                    if let Some(FileAttr::Padding) = file.attr {
+                        continue;
                     }
-                    FileTree {
-                        node: root,
-                        num_of_files,
-                    }
-                } else {
-                    panic!("The torrent has no root folder")
+
+                    let path = &file.path;
+
+                    root.add_child(path, file.length);
+                    num_of_files += 1;
+                }
+                FileTree {
+                    node: root,
+                    num_of_files,
                 }
             }
         }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
     }
 }
 
@@ -147,12 +140,12 @@ impl InfoHash {
         InfoHash { sha1 }
     }
 
-    /// Returns the infohash sha1 value as bytes
+    /// Returns the infohash sha1 value as bytes.
     pub fn as_bytes(&self) -> [u8; 20] {
         self.sha1.digest().bytes()
     }
 
-    /// Url-encodes the infohash value for communication with a [`tracker`](crate::trackers)
+    /// Url-encodes the infohash value.
     pub fn to_url_encoded(&self) -> String {
         let bytes = self.as_bytes();
         let mut buff = String::with_capacity(60);
@@ -199,7 +192,7 @@ mod tests {
                 md5sum: None,
                 attr: None,
             },
-            name: Some("test_file.txt".to_string()),
+            name: "test_file.txt".to_string(),
         };
 
         // We expect 4 pieces, each of size 1024 bytes
@@ -218,7 +211,7 @@ mod tests {
                 md5sum: None,
                 attr: None,
             },
-            name: Some("test_file.txt".to_string()),
+            name: "test_file.txt".to_string(),
         };
 
         let file_tree = info.build_file_tree();
@@ -256,7 +249,7 @@ mod tests {
             pieces: Pieces::__test_build(), // Mocked 4 pieces
             private: None,
             files: Files::MultiFile { files },
-            name: Some("root_folder".to_string()),
+            name: "root_folder".to_string(),
         };
 
         let file_tree = info.build_file_tree();
@@ -295,27 +288,5 @@ mod tests {
             }
             _ => panic!("Expected a directory node for 'root_folder'"),
         }
-    }
-
-    #[test]
-    #[should_panic(expected = "The torrent has no root folder")]
-    fn test_build_file_tree_no_root_folder() {
-        // Setup: Creating a multi-file torrent info without a root folder (should panic)
-        let files = vec![MultiFiles {
-            length: 1024,
-            md5sum: None,
-            path: vec!["folder".to_string(), "file1.txt".to_string()],
-            attr: None,
-        }];
-
-        let info = Info {
-            piece_length: 1024,
-            pieces: Pieces::__test_build(), // Mocked 4 pieces
-            private: None,
-            files: Files::MultiFile { files },
-            name: None, // No root folder
-        };
-
-        info.build_file_tree(); // This should panic because the root folder is missing
     }
 }

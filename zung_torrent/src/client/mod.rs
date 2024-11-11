@@ -10,7 +10,7 @@ use std::{cell::OnceCell, fmt::Display, path::Path, sync::Arc, thread};
 
 use crate::{
     meta_info::{FileTree, InfoHash, SortOrd},
-    trackers::TrackerRequest,
+    sources::DownloadSources,
     MetaInfo,
 };
 
@@ -337,19 +337,51 @@ impl Client {
         filetree.print();
     }
 
-    pub fn tracker_request(&self) -> Result<TrackerRequest> {
-        // TODO: THis is just make-shift. To be handled properly.
-        let url = if let Some(announce) = &self.meta_info.announce {
-            announce
-        } else if let Some(announce_list) = &self.meta_info.announce_list {
-            &announce_list[0][0]
-        } else if let Some(url_list) = &self.meta_info.url_list {
-            &url_list[0]
-        } else {
-            bail!("No url found in the torrent file")
-        };
+    pub fn sources(&self) -> DownloadSources {
+        DownloadSources::new(self.meta_info(), self.info_hash(), self.peer_id())
+    }
 
-        Ok(TrackerRequest::new(url, &self.info_hash, self.peer_id))
+    pub fn print_sources(&self) {
+        match self.sources() {
+            DownloadSources::Tracker {
+                tracker_request_list,
+            } => {
+                print_header("Trackers");
+                for (mut i, tracker) in tracker_request_list.iter().enumerate() {
+                    i += 1;
+                    println!(
+                        "{i}. {}",
+                        tracker.to_url().expect("Failed to generate tracker url")
+                    )
+                }
+            }
+            DownloadSources::HttpSeeder { http_sources_list } => {
+                print_header("HTTP Seeders");
+                for (mut i, http) in http_sources_list.iter().enumerate() {
+                    i += 1;
+                    println!("{i}. {}", http.to_url())
+                }
+            }
+            DownloadSources::Hybrid {
+                http_sources_list,
+                tracker_request_list,
+            } => {
+                print_header("Trackers");
+                for (mut i, tracker) in tracker_request_list.iter().enumerate() {
+                    i += 1;
+                    println!(
+                        "{i}. {}",
+                        tracker.to_url().expect("Failed to generate tracker url")
+                    )
+                }
+
+                print_header("HTTP Seeders");
+                for (mut i, http) in http_sources_list.iter().enumerate() {
+                    i += 1;
+                    println!("{i}. {}", http.to_url())
+                }
+            }
+        }
     }
 }
 
@@ -368,4 +400,8 @@ fn print_info<T: Display>(header: &str, value: Option<T>) {
             "not present".italic().dimmed()
         );
     }
+}
+
+fn print_header(header: &str) {
+    println!("\n{} {header}: ", "==>".green().bold(),);
 }

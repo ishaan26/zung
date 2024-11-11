@@ -9,8 +9,6 @@
 //! The torrent file is parsed and deserialized into the [`MetaInfo`] type which provides various
 //! methods to process the information contained within the torrent file.
 //!
-//! Checkout the [tracker](`crate::tracker`) module for communicating with a tracker.
-//!
 //! ## Note
 //!
 //! It is only intended for the users of the library to interact with the [`crate::Client`] module.
@@ -163,6 +161,11 @@ impl MetaInfo {
         self.announce.as_ref()
     }
 
+    /// Returns the `url_list` key contained in the torrent file (if any).
+    ///
+    /// The `url_list` key refers to a one or more URLs, and will contain a list of web addresses
+    /// where torrent data can be retrieved. The urls contained in this key are intended for using
+    /// HTTP or FTP servers as seeds for BitTorrent downloads.
     pub fn url_list(&self) -> Option<&Vec<String>> {
         self.url_list.as_ref()
     }
@@ -186,5 +189,39 @@ impl MetaInfo {
     /// and is usually a power of 2.     
     pub fn piece_length(&self) -> usize {
         self.info.piece_length
+    }
+
+    /// Returns the number of trackers contained in the torrent file.
+    ///
+    /// If no trakers are presents (meaning only the HTTP Sources are present), then this will
+    /// simply return 0;
+    pub fn number_of_trackers(&self) -> usize {
+        let mut trackers = 0;
+
+        if self.announce.is_some() {
+            trackers = 1;
+        }
+
+        if let Some(list) = &self.announce_list {
+            for i in list {
+                for _ in i {
+                    trackers += 1;
+                }
+            }
+        }
+
+        trackers
+    }
+
+    /// Returns the number of http_sources contained in the torrent file.
+    ///
+    /// If no http_sources are presents (meaning only the trackers are present), then this will
+    /// simply return 0;
+    pub fn number_of_httpsources(&self) -> usize {
+        if let Some(list) = &self.url_list {
+            list.len()
+        } else {
+            0
+        }
     }
 }
