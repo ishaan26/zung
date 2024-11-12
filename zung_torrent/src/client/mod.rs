@@ -21,10 +21,10 @@ pub struct Client {
     file_name: String,
     info_hash: InfoHash,
     peer_id: PeerID,
-    num_files: OnceCell<usize>, // Cache no. of files when calling either file_tree or
-                                // number_of_files methods.
+    num_files: OnceCell<usize>, // Cache no. of files.
 }
 
+/// Main functions
 impl Client {
     /// Creates a new [`Client`] by reading and parsing the provided torrent file.
     ///
@@ -202,6 +202,17 @@ impl Client {
         self.peer_id
     }
 
+    /// Returns the [`DownloadSources`] generated from the information contained in the
+    /// [`MetaInfo`] type.
+    ///
+    /// See the type documentation for more information on the usage.
+    pub fn sources(&self) -> DownloadSources {
+        DownloadSources::new(self.meta_info(), self.info_hash(), self.peer_id())
+    }
+}
+
+/// Printer functions.
+impl Client {
     /// Prints detailed information about the torrent file, including title, number of pieces,
     /// total size, creation date, and more.
     ///
@@ -337,10 +348,7 @@ impl Client {
         filetree.print();
     }
 
-    pub fn sources(&self) -> DownloadSources {
-        DownloadSources::new(self.meta_info(), self.info_hash(), self.peer_id())
-    }
-
+    /// Prints the download sources generated from the [`MetaInfo`] file to stdout.
     pub fn print_sources(&self) {
         match self.sources() {
             DownloadSources::Tracker {
