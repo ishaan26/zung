@@ -7,19 +7,31 @@
 //! then added to this URL, using standard CGI methods (i.e. a '?' after the announce URL, followed
 //! by 'param=value' sequences separated by '&').
 
+use std::net::Ipv4Addr;
+
 use crate::{meta_info::InfoHash, PeerID};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::Serialize;
 
+pub const UDP_PROTOCOL_ID: i64 = 0x41727101980;
+pub const UDP_TRANSACTION_ID: i32 = 696969;
+
 #[derive(Debug)]
-pub struct TrackerRequest<'a> {
-    url: String,
-    params: TrackerRequestParams<'a>,
+pub enum TrackerRequest<'a> {
+    Http {
+        url: String,
+        params: HttpTrackerRequestParams<'a>,
+    },
+    Udp {
+        url: String,
+        connection_id: i64,
+        params: UdpTrackerRequestParams,
+    },
 }
 
 #[derive(Debug, Serialize)]
 /// The parameters used in the client->tracker GET request are as follows:
-pub struct TrackerRequestParams<'a> {
+pub struct HttpTrackerRequestParams<'a> {
     /// The info_hash calculated from the meta_info file provided to the Client.
     #[serde(skip)]
     info_hash: &'a InfoHash,
@@ -95,21 +107,6 @@ pub struct TrackerRequestParams<'a> {
     trackerid: Option<TrackerID>,
 }
 
-#[derive(Debug, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum Event {
-    /// The first request to the tracker must include the event key with this value.
-    Started,
-
-    /// Must be sent to the tracker if the client is shutting down gracefully.
-    Stopped,
-
-    /// Must be sent to the tracker when the download completes. However, must not be sent if the
-    /// download was already 100% complete when the client started. Presumably, this is to allow
-    /// the tracker to increment the "completed downloads" metric based solely on this event.
-    Completed,
-}
-
 /// UID associated with each tracker
 #[derive(Debug, Serialize)]
 pub struct TrackerID {
@@ -135,9 +132,120 @@ where
     }
 }
 
+/// Offset  Size       Name       Value
+/// 0       64-bit    integer    connection_id
+/// 8       32-bit    integer    action          1 // announce
+/// 12      32-bit    integer    transaction_id
+/// 16      20-byte   string     info_hash
+/// 36      20-byte   string     peer_id
+/// 56      64-bit    integer    downloaded
+/// 64      64-bit    integer    left
+/// 72      64-bit    integer    uploaded
+/// 80      32-bit    integer    event           0 // 0: none; 1: completed; 2: started; 3: stopped
+/// 84      32-bit    integer    IP address      0 // default
+/// 88      32-bit    integer    key
+/// 92      32-bit    integer    num_want        -1 // default
+/// 96      16-bit    integer    port
+/// 98
+#[derive(Debug)]
+#[repr(C)]
+pub struct UdpTrackerRequestParams {
+    connection_id: i64,
+    action: i32,
+    transaction_id: i32,
+    info_hash: [u8; 20],
+    peer_id: [u8; 20],
+    downloaded: i64,
+    left: i64,
+    uploaded: i64,
+    event: Event,
+    ip_address: i32,
+    key: i32,
+    num_want: i32,
+    port: u16,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+#[repr(u32)]
+pub enum Event {
+    /// Default event
+    None = 0,
+
+    /// Must be sent to the tracker when the download completes. However, must not be sent if the
+    /// download was already 100% complete when the client started. Presumably, this is to allow
+    /// the tracker to increment the "completed downloads" metric based solely on this event.
+    Completed = 1,
+
+    /// The first request to the tracker must include the event key with this value.
+    Started = 2,
+
+    /// Must be sent to the tracker if the client is shutting down gracefully.
+    Stopped = 3,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[repr(i32)]
+pub enum Action {
+    Connect = 0,
+
+    Announce = 1,
+
+    Scrape = 2,
+
+    Error = 3,
+}
+
 impl<'a> TrackerRequest<'a> {
     pub(crate) fn new(url: &str, info_hash: &'a InfoHash, peer_id: PeerID) -> Self {
-        let params = TrackerRequestParams {
+        let url = url.to_lowercase();
+        if url.starts_with("http") {
+            TrackerRequest::Http {
+                url: url.to_string(),
+                params: HttpTrackerRequestParams::new(info_hash, peer_id),
+            }
+        } else if url.starts_with("udp") {
+            TrackerRequest::Udp {
+                url: url.to_string(),
+                connection_id: 0,
+                params: UdpTrackerRequestParams::new(info_hash, peer_id),
+            }
+        } else {
+            panic!("invalid tracker url in the torrent file")
+        }
+    }
+
+    pub fn to_url(&self) -> Result<String> {
+        match self {
+            TrackerRequest::Http { url, params } => {
+                let announce = url;
+                let info_hash = params.info_hash.to_url_encoded();
+                let peer_id = params.peer_id.to_url_encoded();
+                let params = serde_urlencoded::to_string(params)?;
+
+                Ok(format!(
+                    "{announce}?info_hash={info_hash}&peer_id={peer_id}&{params}"
+                ))
+            }
+            TrackerRequest::Udp { url, .. } => Ok(url.to_string()),
+        }
+    }
+
+    pub fn set_uploaded(&mut self, uploaded: usize) {
+        match self {
+            TrackerRequest::Http { params, .. } => {
+                params.uploaded = uploaded;
+            }
+            TrackerRequest::Udp { params, .. } => {
+                params.uploaded = uploaded as i64;
+            }
+        }
+    }
+}
+
+impl<'a> HttpTrackerRequestParams<'a> {
+    fn new(info_hash: &'a InfoHash, peer_id: PeerID) -> Self {
+        HttpTrackerRequestParams {
             info_hash,
             peer_id,
             // TODO:: Listen on ports 6881 to 6889
@@ -152,23 +260,106 @@ impl<'a> TrackerRequest<'a> {
             numwant: Some(0),
             key: None,
             trackerid: None,
-        };
+        }
+    }
+}
 
-        TrackerRequest {
-            url: url.to_string(),
-            params,
+impl UdpTrackerRequestParams {
+    fn new(connection_id: i64, info_hash: &InfoHash, peer_id: PeerID) -> Self {
+        UdpTrackerRequestParams {
+            connection_id,
+            action: Action::Announce as i32, // 1 -> Announce
+            transaction_id: UDP_TRANSACTION_ID,
+            info_hash: info_hash.as_bytes(),
+            peer_id: peer_id.as_bytes(),
+            downloaded: 0,
+            left: 0, // TODO: update this.
+            uploaded: 0,
+            event: Event::None,
+            ip_address: 0,
+            key: 0,
+            num_want: -1,
+            port: 6886,
+        }
+    }
+}
+
+///connect request:
+/// Offset  Size            Name            Value
+/// 0       64-bit integer  protocol_id     0x41727101980 // magic constant
+/// 8       32-bit integer  action          0 // connect
+/// 12      32-bit integer  transaction_id
+/// 16
+#[derive(Debug)]
+#[repr(C)]
+pub struct UdpConnectRequest {
+    protocol_id: i64,
+    action: Action,
+    transaction_id: i32,
+}
+
+/// connect response:
+///
+/// Offset  Size            Name            Value
+/// 0       32-bit integer  action          0 // connect
+/// 4       32-bit integer  transaction_id
+/// 8       64-bit integer  connection_id
+/// 16
+#[derive(Debug)]
+#[repr(C)]
+pub struct UdpConnectResponse {
+    action: i32,
+    transaction_id: i32,
+    connection_id: i64,
+}
+
+impl UdpConnectRequest {
+    pub(crate) fn new() -> Self {
+        Self {
+            protocol_id: UDP_PROTOCOL_ID,
+            action: Action::Connect,
+            transaction_id: UDP_TRANSACTION_ID,
         }
     }
 
-    pub fn to_url(&self) -> Result<String> {
-        let announce = &self.url;
-        let info_hash = self.params.info_hash.to_url_encoded();
-        let peer_id = self.params.peer_id.to_url_encoded();
-        let params = serde_urlencoded::to_string(&self.params)?;
+    pub(crate) fn as_bytes(&self) -> [u8; 16] {
+        let mut bytes = [0_u8; 16];
 
-        Ok(format!(
-            "{announce}?info_hash={info_hash}&peer_id={peer_id}&{params}"
-        ))
+        bytes[0..8].copy_from_slice(&self.protocol_id.to_be_bytes());
+        bytes[8..12].copy_from_slice(&(self.action as i32).to_be_bytes());
+        bytes[12..16].copy_from_slice(&self.transaction_id.to_be_bytes());
+
+        bytes
+    }
+
+    // TODO: Convert to async
+    pub(crate) fn connect_with(udp_url: &str) -> Result<UdpConnectResponse> {
+        let request = UdpConnectRequest::new();
+        let request_bytes = request.as_bytes();
+        let mut response = [0_u8; 16];
+        let socket = std::net::UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))?;
+
+        socket
+            .connect(udp_url)
+            .context("connecting to udp tracker")?;
+
+        socket
+            .send(&request_bytes)
+            .context("Sending connect request")?;
+
+        socket
+            .recv(&mut response)
+            .context("Failed to recieve any response")?;
+
+        let udp_response = UdpConnectResponse {
+            action: i32::from_be_bytes(response[0..4].try_into()?),
+            transaction_id: i32::from_be_bytes(response[4..8].try_into()?),
+            connection_id: i64::from_be_bytes(response[8..16].try_into()?),
+        };
+
+        assert_eq!(request.transaction_id, udp_response.transaction_id);
+
+        Ok(udp_response)
     }
 }
 
@@ -185,15 +376,22 @@ mod tracker_tests {
         let peer_id = PeerID::default();
         let tracker_request = TrackerRequest::new(url, &info_hash, peer_id);
 
-        assert_eq!(tracker_request.url, url.to_string());
-        assert_eq!(tracker_request.params.port, 6881);
-        assert_eq!(tracker_request.params.uploaded, 0);
-        assert_eq!(tracker_request.params.downloaded, 0);
-        assert_eq!(tracker_request.params.left, 0);
-        assert!(!tracker_request.params.compact);
-        assert!(!tracker_request.params.no_peer_id);
-        assert_eq!(tracker_request.params.event, Some(Event::Started));
-        assert_eq!(tracker_request.params.numwant, Some(0));
+        match tracker_request {
+            TrackerRequest::Http { url, params } => {
+                assert_eq!(url, url.to_string());
+                assert_eq!(params.port, 6881);
+                assert_eq!(params.uploaded, 0);
+                assert_eq!(params.downloaded, 0);
+                assert_eq!(params.left, 0);
+                assert!(!params.compact);
+                assert!(!params.no_peer_id);
+                assert_eq!(params.event, Some(Event::Started));
+                assert_eq!(params.numwant, Some(0));
+            }
+            TrackerRequest::Udp { .. } => {
+                unreachable!("Why is http being read as upd?")
+            }
+        }
     }
 
     // Test to_url method to check if URL is correctly formatted with query parameters.
@@ -207,13 +405,19 @@ mod tracker_tests {
         // Generate the URL with query parameters
         let generated_url = tracker_request.to_url().unwrap();
 
-        // Verify that essential parts of the URL exist
-        assert!(generated_url.contains("http://example.com/announce"));
-        assert!(generated_url.contains(&format!("info_hash={}", info_hash.to_url_encoded())));
-        assert!(generated_url.contains(&format!(
-            "peer_id={}",
-            tracker_request.params.peer_id.to_url_encoded()
-        )));
+        match tracker_request {
+            TrackerRequest::Http { params, .. } => {
+                // Verify that essential parts of the URL exist
+                assert!(generated_url.contains("http://example.com/announce"));
+                assert!(
+                    generated_url.contains(&format!("info_hash={}", info_hash.to_url_encoded()))
+                );
+                assert!(
+                    generated_url.contains(&format!("peer_id={}", params.peer_id.to_url_encoded()))
+                );
+            }
+            _ => panic!(),
+        }
     }
 
     // Test serialization of booleans as integers.
@@ -225,9 +429,14 @@ mod tracker_tests {
         let peer_id = PeerID::default();
         let mut tracker_request = TrackerRequest::new(url, &info_hash, peer_id);
 
-        // Set compact and no_peer_id to true to check if they serialize to 1
-        tracker_request.params.compact = true;
-        tracker_request.params.no_peer_id = true;
+        match &mut tracker_request {
+            TrackerRequest::Http { params, .. } => {
+                // Set compact and no_peer_id to true to check if they serialize to 1
+                params.compact = true;
+                params.no_peer_id = true;
+            }
+            _ => panic!(),
+        }
 
         let generated_url = tracker_request.to_url().unwrap();
 
@@ -235,9 +444,14 @@ mod tracker_tests {
         assert!(generated_url.contains("compact=1"));
         assert!(generated_url.contains("no_peer_id=1"));
 
-        // Set them to false to check if they serialize to 0
-        tracker_request.params.compact = false;
-        tracker_request.params.no_peer_id = false;
+        match &mut tracker_request {
+            TrackerRequest::Http { params, .. } => {
+                // Set them to false to check if they serialize to 0
+                params.compact = false;
+                params.no_peer_id = false;
+            }
+            _ => panic!(),
+        }
 
         let generated_url = tracker_request.to_url().unwrap();
 
@@ -254,20 +468,25 @@ mod tracker_tests {
         let peer_id = PeerID::default();
         let mut tracker_request = TrackerRequest::new(url, &info_hash, peer_id);
 
-        // Set optional parameters
-        tracker_request.params.ip = Some("2001db81".to_string());
-        tracker_request.params.numwant = Some(25);
-        tracker_request.params.key = Some("unique-key".to_string());
-        tracker_request.params.trackerid = Some(TrackerID {
-            id: "tracker-id-123".to_string(),
-        });
+        match &mut tracker_request {
+            TrackerRequest::Http { params, .. } => {
+                // Set optional parameters
+                params.ip = Some("2001db81".to_string());
+                params.numwant = Some(25);
+                params.key = Some("unique-key".to_string());
+                params.trackerid = Some(TrackerID {
+                    id: "tracker-id-123".to_string(),
+                });
 
-        let generated_url = tracker_request.to_url().unwrap();
+                let generated_url = tracker_request.to_url().unwrap();
 
-        // Check that the optional parameters are included in the URL if provided
-        assert!(generated_url.contains("ip=2001db81"));
-        assert!(generated_url.contains("numwant=25"));
-        assert!(generated_url.contains("key=unique-key"));
-        assert!(generated_url.contains("trackerid=tracker-id-123"));
+                // Check that the optional parameters are included in the URL if provided
+                assert!(generated_url.contains("ip=2001db81"));
+                assert!(generated_url.contains("numwant=25"));
+                assert!(generated_url.contains("key=unique-key"));
+                assert!(generated_url.contains("trackerid=tracker-id-123"));
+            }
+            _ => panic!(),
+        }
     }
 }

@@ -11,6 +11,7 @@ use meta_info::MetaInfo;
 
 use clap::{Args, Subcommand};
 use meta_info::SortOrd;
+use sources::trackers::UdpConnectRequest;
 use std::path::PathBuf;
 
 /// Interact with torrent on the commandline. Install the [`zung`](https://crates.io/crates/zung)
@@ -46,6 +47,12 @@ enum TorrentCommands {
         #[arg(long, required = false)]
         request_url: bool,
     },
+
+    Test {
+        /// Torrent File to process
+        #[arg(short, long, required = true)]
+        file: String,
+    },
 }
 
 impl TorrentArgs {
@@ -66,6 +73,10 @@ impl TorrentArgs {
                 if request_url {
                     torrent.print_sources();
                 }
+            }
+            TorrentCommands::Test { file } => {
+                let connect = UdpConnectRequest::connect_with(&file).expect("failed");
+                dbg!(connect);
             }
         }
 
