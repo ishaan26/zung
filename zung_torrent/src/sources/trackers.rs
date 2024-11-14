@@ -10,7 +10,7 @@
 use std::net::Ipv4Addr;
 
 use crate::{meta_info::InfoHash, PeerID};
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use serde::Serialize;
 
 pub const UDP_PROTOCOL_ID: i64 = 0x41727101980;
@@ -167,7 +167,7 @@ pub struct UdpTrackerRequestParams {
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-#[repr(u32)]
+#[repr(i32)]
 pub enum Event {
     /// Default event
     None = 0,
@@ -184,6 +184,18 @@ pub enum Event {
     Stopped = 3,
 }
 
+impl Event {
+    pub fn from_i32(num: i32) -> Result<Self> {
+        match num {
+            0 => Ok(Event::None),
+            1 => Ok(Event::Completed),
+            2 => Ok(Event::Started),
+            3 => Ok(Event::Stopped),
+            num => bail!("Invalid event parameter: {num}"),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[repr(i32)]
 pub enum Action {
@@ -194,6 +206,18 @@ pub enum Action {
     Scrape = 2,
 
     Error = 3,
+}
+
+impl Action {
+    pub fn from_i32(num: i32) -> Result<Self> {
+        match num {
+            0 => Ok(Action::Connect),
+            1 => Ok(Action::Announce),
+            2 => Ok(Action::Scrape),
+            3 => Ok(Action::Error),
+            num => bail!("Invalid action parameter: {num}"),
+        }
+    }
 }
 
 impl<'a> TrackerRequest<'a> {
@@ -208,7 +232,7 @@ impl<'a> TrackerRequest<'a> {
             TrackerRequest::Udp {
                 url: url.to_string(),
                 connection_id: 0,
-                params: UdpTrackerRequestParams::new(info_hash, peer_id),
+                params: UdpTrackerRequestParams::new(0, info_hash, peer_id),
             }
         } else {
             panic!("invalid tracker url in the torrent file")
@@ -308,7 +332,7 @@ pub struct UdpConnectRequest {
 #[derive(Debug)]
 #[repr(C)]
 pub struct UdpConnectResponse {
-    action: i32,
+    action: Action,
     transaction_id: i32,
     connection_id: i64,
 }
@@ -352,7 +376,7 @@ impl UdpConnectRequest {
             .context("Failed to recieve any response")?;
 
         let udp_response = UdpConnectResponse {
-            action: i32::from_be_bytes(response[0..4].try_into()?),
+            action: Action::from_i32(i32::from_be_bytes(response[0..4].try_into()?))?,
             transaction_id: i32::from_be_bytes(response[4..8].try_into()?),
             connection_id: i64::from_be_bytes(response[8..16].try_into()?),
         };
