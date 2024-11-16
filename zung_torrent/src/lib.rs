@@ -3,15 +3,17 @@
 #[cfg(feature = "client")]
 mod client;
 pub mod meta_info;
+// pub mod parked_sources;
 pub mod sources;
 
 pub use client::Client;
 pub use client::PeerID;
+use colored::Colorize;
 use meta_info::MetaInfo;
 
 use clap::{Args, Subcommand};
 use meta_info::SortOrd;
-use sources::trackers::UdpConnectRequest;
+// use parked_sources::trackers::UdpConnectRequest;
 use std::path::PathBuf;
 
 /// Interact with torrent on the commandline. Install the [`zung`](https://crates.io/crates/zung)
@@ -36,22 +38,16 @@ enum TorrentCommands {
         /// Print the files contained in the torrent along with the general info.
         #[arg(long, required = false)]
         with_files: bool,
-    },
 
-    Sources {
-        /// Torrent File to process
-        #[arg(short, long, required = true)]
-        file: PathBuf,
-
-        /// Prints the url generated for making a GET request to the Tracker.
+        /// Print the download sources contained within the torrent file.
         #[arg(long, required = false)]
-        request_url: bool,
+        with_sources: bool,
     },
 
     Test {
         /// Torrent File to process
         #[arg(short, long, required = true)]
-        file: String,
+        file: PathBuf,
     },
 }
 
@@ -59,24 +55,43 @@ impl TorrentArgs {
     pub fn run(self) -> anyhow::Result<()> {
         // Run the commands
         match self.command {
-            TorrentCommands::Info { file, with_files } => {
+            TorrentCommands::Info {
+                file,
+                with_files,
+                with_sources,
+            } => {
                 let torrent = Client::new(file)?;
 
                 torrent.print_torrent_info();
+
                 if with_files {
                     torrent.print_files_by_size(SortOrd::Ascending);
                 }
-            }
-            TorrentCommands::Sources { file, request_url } => {
-                let torrent = Client::new(file)?;
 
-                if request_url {
-                    torrent.print_sources();
+                if with_sources {
+                    torrent.print_download_sources();
                 }
             }
             TorrentCommands::Test { file } => {
-                let connect = UdpConnectRequest::connect_with(&file).expect("failed");
-                dbg!(connect);
+                let torrent = Client::new(file)?;
+                let sources = torrent.sources();
+                let sources = sources.trackers();
+                if let Some(trackers) = sources {
+                    for tracker in trackers {
+                        match tracker.generate_request(torrent.info_hash(), torrent.peer_id()) {
+                            Ok(s) => {
+                                println!("Connected! {}", s.to_url()?.green().bold());
+                            }
+
+                            Err(e) => {
+                                println!("{e}: {}", tracker.url());
+                                continue;
+                            }
+                        }
+                    }
+                } else {
+                    panic!("No trackers")
+                }
             }
         }
 

@@ -73,7 +73,7 @@ pub struct MultiFiles {
 ///
 /// This is a bittorent extension as described in [BEP
 /// 47](https://www.bittorrent.org/beps/bep_0047.html)
-#[derive(Debug)]
+#[derive(Debug, PartialEq, PartialOrd)]
 pub enum FileAttr {
     /// Padding files are synthetic files inserted into the file list to let the following file
     /// start at a piece boundary. That means their length should fill up the remainder of the

@@ -10,10 +10,10 @@ fn source_types() {
     let mc = clients.mc.sources();
     let kali = clients.kali.sources();
 
-    matches!(arch, DownloadSources::HttpSeeder { .. });
+    matches!(arch, DownloadSources::HttpSeeders { .. });
     matches!(mit, DownloadSources::Hybrid { .. });
-    matches!(mc, DownloadSources::Tracker { .. });
-    matches!(kali, DownloadSources::Tracker { .. });
+    matches!(mc, DownloadSources::Trackers { .. });
+    matches!(kali, DownloadSources::Trackers { .. });
 }
 
 #[test]
@@ -23,12 +23,12 @@ fn arch_source() {
     let arch = clients.arch;
 
     let sources = arch.sources();
-    let sources = sources
-        .get_http_seeders_requests()
-        .expect("This should be some");
+    let sources = sources.http_seeders().expect("This should be some");
 
     for s in sources {
-        assert!(s.to_url().contains(arch.meta_info().info().name()))
+        for u in &s.1 {
+            assert!(u.contains(arch.meta_info().info().name()))
+        }
     }
 }
 
@@ -40,27 +40,13 @@ fn mit_source() {
 
     let sources = mit.sources();
 
-    let tracker_sources = sources
-        .get_tracker_requests()
-        .expect("There should be some");
+    assert!(sources.trackers().is_some());
 
-    let http_sources = sources
-        .get_http_seeders_requests()
-        .expect("This should be some");
-
-    for s in tracker_sources {
-        assert!(s
-            .to_url()
-            .unwrap()
-            .contains(&mit.info_hash().to_url_encoded()));
-
-        assert!(s
-            .to_url()
-            .unwrap()
-            .contains(&mit.peer_id().to_url_encoded()));
-    }
+    let http_sources = sources.http_seeders().expect("This should be some");
 
     for s in http_sources {
-        assert!(s.to_url().contains(mit.meta_info().info().name()))
+        for u in &s.1 {
+            assert!(u.contains(mit.meta_info().info().name()))
+        }
     }
 }

@@ -10,7 +10,7 @@ use std::{cell::OnceCell, fmt::Display, path::Path, sync::Arc, thread};
 
 use crate::{
     meta_info::{FileTree, InfoHash, SortOrd},
-    sources::DownloadSources,
+    sources::{DownloadSources, HttpSeederList, TrackerList},
     MetaInfo,
 };
 
@@ -207,7 +207,7 @@ impl Client {
     ///
     /// See the type documentation for more information on the usage.
     pub fn sources(&self) -> DownloadSources {
-        DownloadSources::new(self.meta_info(), self.info_hash(), self.peer_id())
+        DownloadSources::new(self.meta_info())
     }
 }
 
@@ -349,45 +349,42 @@ impl Client {
     }
 
     /// Prints the download sources generated from the [`MetaInfo`] file to stdout.
-    pub fn print_sources(&self) {
-        match self.sources() {
-            DownloadSources::Tracker {
-                tracker_request_list,
-            } => {
-                print_header("Trackers");
-                for (mut i, tracker) in tracker_request_list.iter().enumerate() {
-                    i += 1;
-                    println!(
-                        "{i}. {}",
-                        tracker.to_url().expect("Failed to generate tracker url")
-                    )
+    pub fn print_download_sources(&self) {
+        #[inline]
+        fn print_trackers(tracker_list: TrackerList) {
+            print_header("Trackers");
+            for (mut i, tracker) in tracker_list.iter().enumerate() {
+                i += 1;
+                println!("\t{i}. {}", tracker.url().bold().cyan())
+            }
+        }
+
+        #[inline]
+        fn print_http_seeders(http_seeder_list: HttpSeederList<'_>) {
+            print_header("HTTP Seeders");
+            for (mut i, http) in http_seeder_list.iter().enumerate() {
+                i += 1;
+                println!("\t{i} : {}", http.0.bold().cyan());
+                for (mut j, url) in http.1.urls().iter().enumerate() {
+                    j += 1;
+                    println!("\t\t{j}. {url}")
                 }
             }
-            DownloadSources::HttpSeeder { http_sources_list } => {
-                print_header("HTTP Seeders");
-                for (mut i, http) in http_sources_list.iter().enumerate() {
-                    i += 1;
-                    println!("{i}. {}", http.to_url())
-                }
+        }
+
+        match self.sources() {
+            DownloadSources::Trackers { tracker_list } => {
+                print_trackers(tracker_list);
+            }
+            DownloadSources::HttpSeeders { http_seeder_list } => {
+                print_http_seeders(http_seeder_list);
             }
             DownloadSources::Hybrid {
-                http_sources_list,
-                tracker_request_list,
+                tracker_list,
+                http_seeder_list,
             } => {
-                print_header("Trackers");
-                for (mut i, tracker) in tracker_request_list.iter().enumerate() {
-                    i += 1;
-                    println!(
-                        "{i}. {}",
-                        tracker.to_url().expect("Failed to generate tracker url")
-                    )
-                }
-
-                print_header("HTTP Seeders");
-                for (mut i, http) in http_sources_list.iter().enumerate() {
-                    i += 1;
-                    println!("{i}. {}", http.to_url())
-                }
+                print_trackers(tracker_list);
+                print_http_seeders(http_seeder_list);
             }
         }
     }
