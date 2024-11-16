@@ -8,10 +8,10 @@
 use crate::meta_info::MetaInfo;
 
 mod http_seeders;
-mod trakers;
+mod trackers;
 
 pub use http_seeders::{HttpSeeder, HttpSeederList};
-pub use trakers::{Action, Event, Tracker, TrackerList, TrackerRequest};
+pub use trackers::{Action, Event, Tracker, TrackerList, TrackerRequest};
 
 /// Representing different data sources (trackers and HTTP seeders) for a torrent.
 ///
