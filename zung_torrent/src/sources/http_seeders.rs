@@ -2,7 +2,7 @@ use std::ops::Deref;
 
 use crate::meta_info::{FileAttr, Files, MetaInfo};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HttpSeederList<'a> {
     http_seeder_list: Vec<(&'a str, HttpSeeder)>,
 }
@@ -35,7 +35,7 @@ impl<'a> IntoIterator for &'a HttpSeederList<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HttpSeeder {
     urls: Vec<String>,
 }

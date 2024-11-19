@@ -18,11 +18,11 @@ pub use trackers::{Action, Event, Tracker, TrackerList, TrackerRequest};
 ///
 ///
 /// This enum is constructed with the [`sources`](crate::Client::sources) method.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum DownloadSources<'a> {
     /// Genarated if only `announce` or `announce_list` keys are specified in the [`MetaInfo`]
     /// file.
-    Trackers { tracker_list: TrackerList<'a> },
+    Trackers { tracker_list: TrackerList },
 
     /// Genarated if only `url_list` key is specified in the [`MetaInfo`] file.
     HttpSeeders {
@@ -32,7 +32,7 @@ pub enum DownloadSources<'a> {
     /// Genarated if both `announce` / `announce_list` and `url_list` keys are specified in the
     /// [`MetaInfo`] file.
     Hybrid {
-        tracker_list: TrackerList<'a>,
+        tracker_list: TrackerList,
         http_seeder_list: HttpSeederList<'a>,
     },
 }
@@ -108,7 +108,7 @@ impl<'a> DownloadSources<'a> {
     /// }
     /// # }
     /// ```
-    pub fn trackers(&self) -> Option<&TrackerList<'a>> {
+    pub fn trackers(&self) -> Option<&TrackerList> {
         if let Self::Trackers { tracker_list } = self {
             Some(tracker_list)
         } else if let Self::Hybrid { tracker_list, .. } = self {

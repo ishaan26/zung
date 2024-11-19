@@ -23,13 +23,14 @@ enum Commands {
     Torrent(TorrentArgs),
 }
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.commands {
         Commands::Mini(mini_args) => mini_args.run(),
         Commands::Parsers(bencode_args) => bencode_args.run()?,
-        Commands::Torrent(torrent_args) => torrent_args.run()?,
+        Commands::Torrent(torrent_args) => torrent_args.run().await?,
     }
 
     Ok(())

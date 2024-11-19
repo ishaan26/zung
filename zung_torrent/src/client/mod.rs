@@ -6,7 +6,12 @@ use colored::Colorize;
 use human_bytes::human_bytes;
 use zung_parsers::bencode;
 
-use std::{cell::OnceCell, fmt::Display, path::Path, sync::Arc, thread};
+use std::{
+    fmt::Display,
+    path::Path,
+    sync::{Arc, OnceLock},
+    thread,
+};
 
 use crate::{
     meta_info::{FileTree, InfoHash, SortOrd},
@@ -21,7 +26,7 @@ pub struct Client {
     file_name: String,
     info_hash: InfoHash,
     peer_id: PeerID,
-    num_files: OnceCell<usize>, // Cache no. of files.
+    num_files: OnceLock<usize>, // Cache no. of files.
 }
 
 /// Main functions
@@ -86,7 +91,7 @@ impl Client {
                 file_name,
                 info_hash,
                 peer_id: PeerID::new(),
-                num_files: OnceCell::new(),
+                num_files: OnceLock::new(),
             })
         } else {
             bail!("File not found")

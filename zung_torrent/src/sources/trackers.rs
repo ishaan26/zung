@@ -7,33 +7,43 @@
 //! then added to this URL, using standard CGI methods (i.e. a '?' after the announce URL, followed
 //! by 'param=value' sequences separated by '&').
 
-use std::{borrow::Cow, ops::Deref, time::Duration};
+use std::ops::Deref;
+use std::time::Duration;
 
 use crate::{meta_info::InfoHash, PeerID};
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
 use std::net::Ipv4Addr;
+use tokio::net::UdpSocket;
+use tokio::time::timeout;
 
 pub const UDP_PROTOCOL_ID: i64 = 0x41727101980;
 pub const UDP_TRANSACTION_ID: i32 = 696969;
 
-#[derive(Debug)]
-pub struct TrackerList<'a> {
-    tracker_list: Vec<Tracker<'a>>,
+pub const TIMEOUT_DURATION: Duration = Duration::from_secs(10);
+
+#[derive(Debug, Clone)]
+pub struct TrackerList {
+    tracker_list: Vec<Tracker>,
 }
 
-impl<'a> TrackerList<'a> {
-    pub(crate) fn new(tracker_list: Vec<Tracker<'a>>) -> Self {
+impl TrackerList {
+    pub(crate) fn new(tracker_list: Vec<Tracker>) -> Self {
         Self { tracker_list }
     }
 
-    fn tracker_list(&self) -> &[Tracker<'a>] {
+    fn tracker_list(&self) -> &[Tracker] {
         &self.tracker_list
+    }
+
+    /// Consumes the tracker list and returns the internal Vec of [`Tracker`]s.
+    pub fn into_vec(self) -> Vec<Tracker> {
+        self.tracker_list
     }
 }
 
-impl<'a> Deref for TrackerList<'a> {
-    type Target = [Tracker<'a>];
+impl Deref for TrackerList {
+    type Target = [Tracker];
 
     fn deref(&self) -> &Self::Target {
         self.tracker_list()
@@ -41,30 +51,31 @@ impl<'a> Deref for TrackerList<'a> {
 }
 
 // Iterator implementation
-impl<'a> IntoIterator for &'a TrackerList<'a> {
-    type Item = &'a Tracker<'a>;
-    type IntoIter = std::slice::Iter<'a, Tracker<'a>>;
+impl<'a> IntoIterator for &'a TrackerList {
+    type Item = &'a Tracker;
+    type IntoIter = std::slice::Iter<'a, Tracker>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.tracker_list.iter()
     }
 }
 
-#[derive(Debug)]
-pub enum Tracker<'a> {
-    Http(Cow<'a, str>),
-    Udp(Cow<'a, str>),
-    Invalid(Cow<'a, str>),
+// TODO: Look into SmallStr
+#[derive(Debug, Clone)]
+pub enum Tracker {
+    Http(Box<str>),
+    Udp(Box<str>),
+    Invalid(Box<str>),
 }
 
-impl<'a> Tracker<'a> {
-    pub fn new(tracker_url: &'a str) -> Self {
+impl Tracker {
+    pub fn new(tracker_url: &str) -> Self {
         if tracker_url.starts_with("http") {
-            Self::Http(Cow::from(tracker_url))
+            Self::Http(Box::from(tracker_url))
         } else if tracker_url.starts_with("udp") {
-            Self::Udp(Cow::from(tracker_url))
+            Self::Udp(Box::from(tracker_url))
         } else {
-            Self::Invalid(Cow::from(tracker_url))
+            Self::Invalid(Box::from(tracker_url))
         }
     }
 
@@ -76,8 +87,8 @@ impl<'a> Tracker<'a> {
         }
     }
 
-    pub fn generate_request(
-        &self,
+    pub async fn generate_request<'a>(
+        &'a self,
         info_hash: &'a InfoHash,
         peer_id: PeerID,
     ) -> Result<TrackerRequest> {
@@ -92,7 +103,11 @@ impl<'a> Tracker<'a> {
                     Some(s) => s.0,
                     None => udp_url,
                 };
-                let connection = UdpConnectRequest::connect_with(udp_url)?;
+                let connection = UdpConnectRequest::new()
+                    .await?
+                    .connect_with(udp_url)
+                    .await?;
+
                 let connection_id = connection.connection_id;
                 Ok(TrackerRequest::Udp {
                     url,
@@ -359,26 +374,6 @@ impl<'a> HttpTrackerRequestParams<'a> {
     }
 }
 
-impl UdpTrackerRequestParams {
-    fn new(connection_id: i64, info_hash: &InfoHash, peer_id: PeerID) -> Self {
-        UdpTrackerRequestParams {
-            connection_id,
-            action: Action::Announce as i32, // 1 -> Announce
-            transaction_id: UDP_TRANSACTION_ID,
-            info_hash: info_hash.as_bytes(),
-            peer_id: peer_id.as_bytes(),
-            downloaded: 0,
-            left: 0, // TODO: update this.
-            uploaded: 0,
-            event: Event::None,
-            ip_address: 0,
-            key: 0,
-            num_want: -1,
-            port: 6886,
-        }
-    }
-}
-
 ///connect request:
 /// Offset  Size            Name            Value
 /// 0       64-bit integer  protocol_id     0x41727101980 // magic constant
@@ -386,8 +381,8 @@ impl UdpTrackerRequestParams {
 /// 12      32-bit integer  transaction_id
 /// 16
 #[derive(Debug)]
-#[repr(C)]
 pub struct UdpConnectRequest {
+    socket: UdpSocket, // TODO: Socket should not be here
     protocol_id: i64,
     action: Action,
     transaction_id: i32,
@@ -409,12 +404,13 @@ pub struct UdpConnectResponse {
 }
 
 impl UdpConnectRequest {
-    pub(crate) fn new() -> Self {
-        Self {
+    pub(crate) async fn new() -> Result<Self> {
+        Ok(Self {
+            socket: UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await?,
             protocol_id: UDP_PROTOCOL_ID,
             action: Action::Connect,
             transaction_id: UDP_TRANSACTION_ID,
-        }
+        })
     }
 
     pub(crate) fn as_bytes(&self) -> [u8; 16] {
@@ -427,29 +423,26 @@ impl UdpConnectRequest {
         bytes
     }
 
-    // TODO: Convert to async
-    pub(crate) fn connect_with(udp_url: &str) -> Result<UdpConnectResponse> {
-        let request = UdpConnectRequest::new();
+    pub(crate) async fn connect_with(&self, udp_url: &str) -> Result<UdpConnectResponse> {
+        let request = UdpConnectRequest::new().await?;
         let request_bytes = request.as_bytes();
         let mut response = [0_u8; 16];
-        let socket = std::net::UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))?;
 
-        socket
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .expect("set_read_timeout call failed");
+        let socket = &self.socket;
 
-        socket
-            .set_write_timeout(Some(Duration::from_secs(5)))
-            .expect("set_read_timeout call failed");
+        timeout(TIMEOUT_DURATION, socket.connect(udp_url))
+            .await
+            .context("Timed Out")?
+            .context("Failed to connect")?;
 
-        socket.connect(udp_url).context("Failed to connect")?;
-
-        socket
-            .send(&request_bytes)
+        timeout(TIMEOUT_DURATION, socket.send(&request_bytes))
+            .await
+            .context("Timed Out")?
             .context("Sending connect request")?;
 
-        socket
-            .recv(&mut response)
+        timeout(TIMEOUT_DURATION, socket.recv(&mut response))
+            .await
+            .context("Timed Out")?
             .context("Failed to recieve any response")?;
 
         let udp_response = UdpConnectResponse {
@@ -458,9 +451,31 @@ impl UdpConnectRequest {
             connection_id: i64::from_be_bytes(response[8..16].try_into()?),
         };
 
-        assert_eq!(request.transaction_id, udp_response.transaction_id);
+        if udp_response.transaction_id == request.transaction_id {
+            Ok(udp_response)
+        } else {
+            bail!("Invalid response from udp server")
+        }
+    }
+}
 
-        Ok(udp_response)
+impl UdpTrackerRequestParams {
+    fn new(connection_id: i64, info_hash: &InfoHash, peer_id: PeerID) -> Self {
+        UdpTrackerRequestParams {
+            connection_id,
+            action: Action::Announce as i32, // 1 -> Announce
+            transaction_id: UDP_TRANSACTION_ID,
+            info_hash: info_hash.as_bytes(),
+            peer_id: peer_id.as_bytes(),
+            downloaded: 0,
+            left: 0, // TODO: update this.
+            uploaded: 0,
+            event: Event::None,
+            ip_address: 0,
+            key: 0,
+            num_want: -1,
+            port: 6886,
+        }
     }
 }
 
@@ -470,14 +485,15 @@ mod tracker_tests {
     use crate::meta_info::InfoHash;
 
     // Test creation of a new TrackerRequest with default parameters.
-    #[test]
-    fn test_tracker_request_creation() {
+    #[tokio::test]
+    async fn test_tracker_request_creation() {
         let url = "http://example.com/announce";
         let info_hash = InfoHash::new(b"test info_hash");
         let peer_id = PeerID::default();
         let tracker_request = Tracker::new(url);
         let tracker_request = tracker_request
             .generate_request(&info_hash, peer_id)
+            .await
             .unwrap();
 
         match tracker_request {
@@ -499,14 +515,15 @@ mod tracker_tests {
     }
 
     // Test to_url method to check if URL is correctly formatted with query parameters.
-    #[test]
-    fn test_tracker_request_to_url() {
+    #[tokio::test]
+    async fn test_tracker_request_to_url() {
         let url = "http://example.com/announce";
         let info_hash = InfoHash::new(b"test info_hash");
         let peer_id = PeerID::default();
         let tracker_request = Tracker::new(url);
         let tracker_request = tracker_request
             .generate_request(&info_hash, peer_id)
+            .await
             .unwrap();
 
         // Generate the URL with query parameters
@@ -528,8 +545,8 @@ mod tracker_tests {
     }
 
     // Test serialization of booleans as integers.
-    #[test]
-    fn test_bool_as_int_serialization() {
+    #[tokio::test]
+    async fn test_bool_as_int_serialization() {
         let url = "http://example.com/announce";
         let info_hash = InfoHash::new(b"test info_hash");
 
@@ -537,6 +554,7 @@ mod tracker_tests {
         let tracker_request = Tracker::new(url);
         let mut tracker_request = tracker_request
             .generate_request(&info_hash, peer_id)
+            .await
             .unwrap();
 
         match &mut tracker_request {
@@ -571,14 +589,15 @@ mod tracker_tests {
     }
 
     // Test optional parameters like IP, numwant, key, and trackerid.
-    #[test]
-    fn test_optional_parameters() {
+    #[tokio::test]
+    async fn test_optional_parameters() {
         let url = "http://example.com/announce";
         let info_hash = InfoHash::new(b"test info_hash");
         let peer_id = PeerID::default();
         let tracker_request = Tracker::new(url);
         let mut tracker_request = tracker_request
             .generate_request(&info_hash, peer_id)
+            .await
             .unwrap();
 
         match &mut tracker_request {

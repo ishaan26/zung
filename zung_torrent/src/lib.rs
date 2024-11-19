@@ -9,12 +9,15 @@ pub mod sources;
 pub use client::Client;
 pub use client::PeerID;
 use colored::Colorize;
+use futures::stream::FuturesUnordered;
 use meta_info::MetaInfo;
 
 use clap::{Args, Subcommand};
 use meta_info::SortOrd;
+use sources::DownloadSources;
 // use parked_sources::trackers::UdpConnectRequest;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 /// Interact with torrent on the commandline. Install the [`zung`](https://crates.io/crates/zung)
 /// crate and run `zung torrent --help` to see what options are available
@@ -52,7 +55,7 @@ enum TorrentCommands {
 }
 
 impl TorrentArgs {
-    pub fn run(self) -> anyhow::Result<()> {
+    pub async fn run(self) -> anyhow::Result<()> {
         // Run the commands
         match self.command {
             TorrentCommands::Info {
@@ -74,20 +77,33 @@ impl TorrentArgs {
             }
             TorrentCommands::Test { file } => {
                 let torrent = Client::new(file)?;
+                let torrent = Arc::new(torrent);
                 let sources = torrent.sources();
-                let sources = sources.trackers();
-                if let Some(trackers) = sources {
-                    for tracker in trackers {
-                        match tracker.generate_request(torrent.info_hash(), torrent.peer_id()) {
-                            Ok(s) => {
-                                println!("Connected! {}", s.to_url()?.green().bold());
-                            }
 
-                            Err(e) => {
-                                println!("{e}: {}", tracker.url());
-                                continue;
+                if let DownloadSources::Trackers { tracker_list } = sources {
+                    let handles = FuturesUnordered::new();
+                    for tracker in tracker_list.into_vec() {
+                        let torrent = Arc::clone(&torrent);
+                        let handle = tokio::spawn(async move {
+                            match tracker
+                                .generate_request(torrent.info_hash(), torrent.peer_id())
+                                .await
+                            {
+                                Ok(s) => {
+                                    println!("Connected! {}", s.to_url().unwrap().green().bold());
+                                }
+
+                                Err(e) => {
+                                    println!("{e}: {}", tracker.url());
+                                }
                             }
-                        }
+                        });
+
+                        handles.push(handle);
+                    }
+
+                    for h in handles {
+                        h.await?
                     }
                 } else {
                     panic!("No trackers")

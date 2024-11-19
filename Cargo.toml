@@ -21,6 +21,7 @@ zung_torrent = { version = "0.1.0", path = "./zung_torrent" }
 anyhow = "1.0.89"
 anstyle = "1.0.8"
 clap = { version = "4.5.20", features = ["derive"] }
+tokio = "1.41.1"
 
 
 [profile.release]
