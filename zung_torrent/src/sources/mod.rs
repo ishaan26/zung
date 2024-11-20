@@ -5,7 +5,15 @@
 //! sources from metadata, allowing a torrent client to efficiently pull data from either or both
 //! types of sources based on the information contained in the [`MetaInfo`] file.
 
-use crate::meta_info::MetaInfo;
+use crate::{
+    meta_info::{InfoHash, MetaInfo},
+    PeerID,
+};
+
+use anyhow::Result;
+use futures::stream::FuturesUnordered;
+use std::sync::Arc;
+use tokio::task::JoinHandle;
 
 mod http_seeders;
 mod trackers;
@@ -182,5 +190,19 @@ impl<'a> DownloadSources<'a> {
     #[must_use]
     pub fn is_hybrid(&self) -> bool {
         matches!(self, Self::Hybrid { .. })
+    }
+
+    pub fn tracker_requests(
+        &self,
+        info_hash: Arc<InfoHash>,
+        peer_id: PeerID,
+    ) -> Option<FuturesUnordered<JoinHandle<Result<TrackerRequest>>>> {
+        match self {
+            DownloadSources::Trackers { tracker_list }
+            | DownloadSources::Hybrid { tracker_list, .. } => {
+                Some(tracker_list.generate_requests(info_hash, peer_id))
+            }
+            DownloadSources::HttpSeeders { .. } => None,
+        }
     }
 }

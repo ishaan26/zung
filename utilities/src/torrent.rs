@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::LazyLock};
 use zung_torrent::*;
 
 pub struct TestClient {
@@ -42,3 +42,5 @@ impl Default for TestClient {
         Self::new()
     }
 }
+
+pub static CLIENT: LazyLock<TestClient> = LazyLock::new(TestClient::new);

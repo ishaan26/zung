@@ -9,13 +9,11 @@ pub mod sources;
 pub use client::Client;
 pub use client::PeerID;
 use colored::Colorize;
-use futures::stream::FuturesUnordered;
+use futures::StreamExt;
 use meta_info::MetaInfo;
 
 use clap::{Args, Subcommand};
 use meta_info::SortOrd;
-use sources::DownloadSources;
-// use parked_sources::trackers::UdpConnectRequest;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -77,36 +75,22 @@ impl TorrentArgs {
             }
             TorrentCommands::Test { file } => {
                 let torrent = Client::new(file)?;
-                let torrent = Arc::new(torrent);
-                let sources = torrent.sources();
+                let mut list = torrent
+                    .sources()
+                    .tracker_requests(Arc::new(torrent.info_hash().clone()), torrent.peer_id())
+                    .unwrap();
 
-                if let DownloadSources::Trackers { tracker_list } = sources {
-                    let handles = FuturesUnordered::new();
-                    for tracker in tracker_list.into_vec() {
-                        let torrent = Arc::clone(&torrent);
-                        let handle = tokio::spawn(async move {
-                            match tracker
-                                .generate_request(torrent.info_hash(), torrent.peer_id())
-                                .await
-                            {
-                                Ok(s) => {
-                                    println!("Connected! {}", s.to_url().unwrap().green().bold());
-                                }
-
-                                Err(e) => {
-                                    println!("{e}: {}", tracker.url());
-                                }
-                            }
-                        });
-
-                        handles.push(handle);
+                // Waits for ALL futures to complete
+                while let Some(result) = list.next().await {
+                    match result {
+                        Ok(a) => match a {
+                            Ok(a) => println!("Connected! {}", a.to_url().unwrap().green()),
+                            Err(e) => println!("{}", e.to_string().red()),
+                        },
+                        Err(e) => {
+                            println!("{}", e.to_string().red())
+                        }
                     }
-
-                    for h in handles {
-                        h.await?
-                    }
-                } else {
-                    panic!("No trackers")
                 }
             }
         }

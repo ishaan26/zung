@@ -1,4 +1,4 @@
-use utilities::torrent::TestClient;
+use utilities::torrent::CLIENT;
 
 // Values directly parsed and extracted from a torrent file.
 mod getters {
@@ -6,153 +6,137 @@ mod getters {
 
     #[test]
     fn title() {
-        let tester = TestClient::new();
-
-        assert_eq!(tester.arch.meta_info().title(), None);
+        assert_eq!(CLIENT.arch.meta_info().title(), None);
         assert_eq!(
-            tester.mit.meta_info().title(),
+            CLIENT.mit.meta_info().title(),
             Some(&"MIT6.00SCS11".to_string())
         );
-        assert_eq!(tester.kali.meta_info().title(), None);
+        assert_eq!(CLIENT.kali.meta_info().title(), None);
     }
 
     #[test]
     fn announce() {
-        let tester = TestClient::new();
-
-        assert_eq!(tester.arch.meta_info().announce(), None);
+        assert_eq!(CLIENT.arch.meta_info().announce(), None);
         assert_eq!(
-            tester.mit.meta_info().announce(),
+            CLIENT.mit.meta_info().announce(),
             Some(&"http://bt1.archive.org:6969/announce".to_string())
         );
         assert_eq!(
-            tester.kali.meta_info().announce(),
+            CLIENT.kali.meta_info().announce(),
             Some(&"http://tracker.kali.org:6969/announce".to_string())
         );
     }
 
     #[test]
     fn number_of_pieces() {
-        let tester = TestClient::new();
-
-        assert_eq!(tester.arch.meta_info().number_of_pieces(), 1911);
-        assert_eq!(tester.mit.meta_info().number_of_pieces(), 3259);
-        assert_eq!(tester.kali.meta_info().number_of_pieces(), 15650);
+        assert_eq!(CLIENT.arch.meta_info().number_of_pieces(), 1911);
+        assert_eq!(CLIENT.mit.meta_info().number_of_pieces(), 3259);
+        assert_eq!(CLIENT.kali.meta_info().number_of_pieces(), 15650);
     }
 
     #[test]
     fn creation_date() {
-        let tester = TestClient::new();
         assert_eq!(
-            tester.arch.meta_info().creation_date().unwrap(),
+            CLIENT.arch.meta_info().creation_date().unwrap(),
             "Mon, 1 Apr 2024 18:00:29 +0000"
         );
         assert_eq!(
-            tester.mit.meta_info().creation_date().unwrap(),
+            CLIENT.mit.meta_info().creation_date().unwrap(),
             "Wed, 12 Sep 2012 22:35:35 +0000"
         );
         assert_eq!(
-            tester.kali.meta_info().creation_date().unwrap(),
+            CLIENT.kali.meta_info().creation_date().unwrap(),
             "Tue, 27 Feb 2024 13:12:54 +0000"
         );
     }
 
     #[test]
     fn creation_date_raw() {
-        let tester = TestClient::new();
         assert_eq!(
-            tester.arch.meta_info().creation_date_raw().unwrap(),
+            CLIENT.arch.meta_info().creation_date_raw().unwrap(),
             1711994429
         );
         assert_eq!(
-            tester.mit.meta_info().creation_date_raw().unwrap(),
+            CLIENT.mit.meta_info().creation_date_raw().unwrap(),
             1347489335
         );
         assert_eq!(
-            tester.kali.meta_info().creation_date_raw().unwrap(),
+            CLIENT.kali.meta_info().creation_date_raw().unwrap(),
             1709039574
         );
     }
 
     #[test]
     fn comment() {
-        let tester = TestClient::new();
-
         assert_eq!(
-            tester.arch.meta_info().comment(),
+            CLIENT.arch.meta_info().comment(),
             Some(&"Arch Linux 2024.04.01 <https://archlinux.org>".to_string())
         );
 
         assert_eq!(
-            tester.mit.meta_info().comment(),
+            CLIENT.mit.meta_info().comment(),
             Some(&"This content hosted at the Internet Archive at http://archive.org/details/MIT6.00SCS11\nFiles may have changed, which prevents torrents from downloading correctly or completely; please check for an updated torrent at http://archive.org/download/MIT6.00SCS11/MIT6.00SCS11_archive.torrent\nNote: retrieval usually requires a client that supports webseeding (GetRight style).\nNote: many Internet Archive torrents contain a 'pad file' directory. This directory and the files within it may be erased once retrieval completes.\nNote: the file MIT6.00SCS11_meta.xml contains metadata about this torrent's contents.".to_string())
         );
 
         assert_eq!(
-            tester.kali.meta_info().comment().unwrap(),
+            CLIENT.kali.meta_info().comment().unwrap(),
             "kali-linux-2024.1-installer-amd64.iso from https://www.kali.org/get-kali/"
         );
     }
 
     #[test]
     fn created_by() {
-        let tester = TestClient::new();
         assert_eq!(
-            tester.arch.meta_info().created_by().unwrap(),
+            CLIENT.arch.meta_info().created_by().unwrap(),
             "mktorrent 1.1"
         );
         assert_eq!(
-            tester.mit.meta_info().created_by(),
+            CLIENT.mit.meta_info().created_by(),
             Some(&"ia_make_torrent".to_string())
         );
         assert_eq!(
-            tester.kali.meta_info().created_by().unwrap(),
+            CLIENT.kali.meta_info().created_by().unwrap(),
             "mktorrent 1.1"
         );
     }
 
     #[test]
     fn encoding() {
-        let tester = TestClient::new();
-        assert!(tester.arch.meta_info().encoding().is_none());
-        assert!(tester.mit.meta_info().encoding().is_none());
-        assert!(tester.kali.meta_info().encoding().is_none());
+        assert!(CLIENT.arch.meta_info().encoding().is_none());
+        assert!(CLIENT.mit.meta_info().encoding().is_none());
+        assert!(CLIENT.kali.meta_info().encoding().is_none());
     }
 
     #[test]
     fn piece_length() {
-        let tester = TestClient::new();
-        assert_eq!(tester.arch.meta_info().piece_length(), 524288);
-        assert_eq!(tester.mit.meta_info().piece_length(), 4194304);
-        assert_eq!(tester.kali.meta_info().piece_length(), 262144);
+        assert_eq!(CLIENT.arch.meta_info().piece_length(), 524288);
+        assert_eq!(CLIENT.mit.meta_info().piece_length(), 4194304);
+        assert_eq!(CLIENT.kali.meta_info().piece_length(), 262144);
     }
 
     #[test]
     fn torrent_size() {
-        let tester = TestClient::new();
-        assert_eq!(tester.arch.meta_info().size(), 1001914368);
-        assert_eq!(tester.mit.meta_info().size(), 13669236736);
-        assert_eq!(tester.kali.meta_info().size(), 4102553600);
+        assert_eq!(CLIENT.arch.meta_info().size(), 1001914368);
+        assert_eq!(CLIENT.mit.meta_info().size(), 13669236736);
+        assert_eq!(CLIENT.kali.meta_info().size(), 4102553600);
     }
 
     #[test]
     fn url_list() {
-        let tester = TestClient::new();
-        assert!(tester.arch.meta_info().url_list().is_some());
-        assert!(tester.mit.meta_info().url_list().is_some());
-        assert!(tester.kali.meta_info().url_list().is_some());
-        assert!(tester.mc.meta_info().url_list().is_some()); // in this the url-list is [""].
+        assert!(CLIENT.arch.meta_info().url_list().is_some());
+        assert!(CLIENT.mit.meta_info().url_list().is_some());
+        assert!(CLIENT.kali.meta_info().url_list().is_some());
+        assert!(CLIENT.mc.meta_info().url_list().is_some()); // in this the url-list is [""].
                                                              // However, this should still return Some there is a entry of url list present in the
                                                              // torrent file.
     }
 
     #[test]
     fn announce_list() {
-        let tester = TestClient::new();
-        assert!(tester.arch.meta_info().announce_list().is_none());
-        assert!(tester.mit.meta_info().announce_list().is_some());
-        assert!(tester.kali.meta_info().announce_list().is_some());
-        assert!(tester.mc.meta_info().announce_list().is_some());
+        assert!(CLIENT.arch.meta_info().announce_list().is_none());
+        assert!(CLIENT.mit.meta_info().announce_list().is_some());
+        assert!(CLIENT.kali.meta_info().announce_list().is_some());
+        assert!(CLIENT.mc.meta_info().announce_list().is_some());
     }
 }
 
@@ -162,10 +146,9 @@ mod calculators {
 
     #[test]
     fn info_hash_to_string() {
-        let tester = TestClient::new();
-        let arch = tester.arch.info_hash().to_string();
-        let mit = tester.mit.info_hash().to_string();
-        let kali = tester.kali.info_hash().to_string();
+        let arch = CLIENT.arch.info_hash().to_string();
+        let mit = CLIENT.mit.info_hash().to_string();
+        let kali = CLIENT.kali.info_hash().to_string();
 
         // compared with info hashes as generated by qbittorrent.
         assert_eq!(arch, "6853ab2b86b2cb6a3c778b8aafe3dffd94242321");
@@ -175,10 +158,9 @@ mod calculators {
 
     #[test]
     fn info_hash_as_bytes() {
-        let tester = TestClient::new();
-        let arch = hex::encode(tester.arch.info_hash().as_bytes());
-        let mit = hex::encode(tester.mit.info_hash().as_bytes());
-        let kali = hex::encode(tester.kali.info_hash().as_bytes());
+        let arch = hex::encode(CLIENT.arch.info_hash().as_bytes());
+        let mit = hex::encode(CLIENT.mit.info_hash().as_bytes());
+        let kali = hex::encode(CLIENT.kali.info_hash().as_bytes());
 
         // compared with info hashes as generated by qbittorrent.
         assert_eq!(arch, "6853ab2b86b2cb6a3c778b8aafe3dffd94242321");
@@ -188,10 +170,9 @@ mod calculators {
 
     #[test]
     fn info_hash_url_encode() {
-        let tester = TestClient::new();
-        let arch = tester.arch.info_hash().to_url_encoded();
-        let mit = tester.mit.info_hash().to_url_encoded();
-        let kali = tester.kali.info_hash().to_url_encoded();
+        let arch = CLIENT.arch.info_hash().to_url_encoded();
+        let mit = CLIENT.mit.info_hash().to_url_encoded();
+        let kali = CLIENT.kali.info_hash().to_url_encoded();
 
         // compared with info hashes as generated by qbittorrent.
         assert_eq!(
@@ -210,10 +191,9 @@ mod calculators {
 
     #[test]
     fn number_of_files() {
-        let tester = TestClient::new();
-        assert_eq!(tester.arch.number_of_files(), 1);
-        assert_eq!(tester.kali.number_of_files(), 1);
-        assert_eq!(tester.mit.number_of_files(), 154);
-        assert_eq!(tester.mc.number_of_files(), 131934);
+        assert_eq!(CLIENT.arch.number_of_files(), 1);
+        assert_eq!(CLIENT.kali.number_of_files(), 1);
+        assert_eq!(CLIENT.mit.number_of_files(), 154);
+        assert_eq!(CLIENT.mc.number_of_files(), 131934);
     }
 }
