@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use futures::StreamExt;
 use utilities::torrent::CLIENT;
 use zung_torrent::sources::DownloadSources;
@@ -54,7 +52,7 @@ async fn kali_source() {
 
     let mut list = kali
         .sources()
-        .tracker_requests(Arc::new(kali.info_hash().clone()), kali.peer_id())
+        .tracker_requests(kali.info_hash().as_encoded(), kali.peer_id())
         .unwrap();
 
     // Waits for ALL futures to complete

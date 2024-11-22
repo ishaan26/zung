@@ -11,7 +11,8 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::{meta_info::InfoHash, PeerID};
+use crate::meta_info::InfoHashEncoded;
+use crate::PeerID;
 use anyhow::{bail, Context, Result};
 use futures::stream::FuturesUnordered;
 use serde::Serialize;
@@ -49,14 +50,13 @@ impl TrackerList {
     // TODO: Revisit this if there is a faster more efficient way.
     pub fn generate_requests(
         &self,
-        info_hash: Arc<InfoHash>,
+        info_hash: InfoHashEncoded,
         peer_id: PeerID,
     ) -> FuturesUnordered<JoinHandle<Result<TrackerRequest>>> {
         self.as_array()
             .iter()
             .cloned() // The clone here is just Arc::clone
             .map(|tracker| {
-                let info_hash = Arc::clone(&info_hash);
                 tokio::spawn(async move { tracker.generate_request(info_hash, peer_id).await })
             })
             .collect()
@@ -120,7 +120,7 @@ impl Tracker {
 
     pub async fn generate_request(
         &self,
-        info_hash: Arc<InfoHash>,
+        info_hash: InfoHashEncoded,
         peer_id: PeerID,
     ) -> Result<TrackerRequest> {
         match self {
@@ -195,7 +195,7 @@ impl TrackerRequest {
 pub struct HttpTrackerRequestParams {
     /// The info_hash calculated from the meta_info file provided to the Client.
     #[serde(skip)]
-    info_hash: Arc<InfoHash>,
+    info_hash: InfoHashEncoded,
 
     /// PeerID of the Client.
     #[serde(skip)]
@@ -314,8 +314,8 @@ pub struct UdpTrackerRequestParams {
     connection_id: i64,
     action: i32,
     transaction_id: i32,
-    info_hash: [u8; 20],
-    peer_id: [u8; 20],
+    info_hash: InfoHashEncoded,
+    peer_id: PeerID,
     downloaded: i64,
     left: i64,
     uploaded: i64,
@@ -411,7 +411,7 @@ impl TrackerRequest {
 }
 
 impl HttpTrackerRequestParams {
-    fn new(info_hash: Arc<InfoHash>, peer_id: PeerID) -> Self {
+    fn new(info_hash: InfoHashEncoded, peer_id: PeerID) -> Self {
         HttpTrackerRequestParams {
             info_hash,
             peer_id,
@@ -517,13 +517,13 @@ impl UdpConnectRequest {
 }
 
 impl UdpTrackerRequestParams {
-    fn new(connection_id: i64, info_hash: Arc<InfoHash>, peer_id: PeerID) -> Self {
+    fn new(connection_id: i64, info_hash: InfoHashEncoded, peer_id: PeerID) -> Self {
         UdpTrackerRequestParams {
             connection_id,
             action: Action::Announce as i32, // 1 -> Announce
             transaction_id: UDP_TRANSACTION_ID,
-            info_hash: info_hash.as_bytes(),
-            peer_id: peer_id.as_bytes(),
+            info_hash,
+            peer_id,
             downloaded: 0,
             left: 0, // TODO: update this.
             uploaded: 0,
@@ -545,7 +545,7 @@ mod tracker_tests {
     #[tokio::test]
     async fn test_tracker_request_creation() {
         let sample_url = "http://example.com/announce";
-        let info_hash = Arc::new(InfoHash::new(b"test info_hash"));
+        let info_hash = InfoHash::new(b"test info_hash").as_encoded();
         let peer_id = PeerID::default();
         let tracker_request = Tracker::new(sample_url);
         let tracker_request = tracker_request
@@ -575,8 +575,7 @@ mod tracker_tests {
     #[tokio::test]
     async fn test_tracker_request_to_url() {
         let url = "http://example.com/announce";
-        let info_hash = Arc::new(InfoHash::new(b"test info_hash"));
-        let info_hash_cloned = Arc::clone(&info_hash);
+        let info_hash = InfoHash::new(b"test info_hash").as_encoded();
         let peer_id = PeerID::default();
         let tracker_request = Tracker::new(url);
         let tracker_request = tracker_request
@@ -591,8 +590,9 @@ mod tracker_tests {
             TrackerRequest::Http { params, .. } => {
                 // Verify that essential parts of the URL exist
                 assert!(generated_url.contains("http://example.com/announce"));
-                assert!(generated_url
-                    .contains(&format!("info_hash={}", info_hash_cloned.to_url_encoded())));
+                assert!(
+                    generated_url.contains(&format!("info_hash={}", info_hash.to_url_encoded()))
+                );
                 assert!(
                     generated_url.contains(&format!("peer_id={}", params.peer_id.to_url_encoded()))
                 );
@@ -605,7 +605,7 @@ mod tracker_tests {
     #[tokio::test]
     async fn test_bool_as_int_serialization() {
         let url = "http://example.com/announce";
-        let info_hash = Arc::new(InfoHash::new(b"test info_hash"));
+        let info_hash = InfoHash::new(b"test info_hash").as_encoded();
 
         let peer_id = PeerID::default();
         let tracker_request = Tracker::new(url);
@@ -649,7 +649,7 @@ mod tracker_tests {
     #[tokio::test]
     async fn test_optional_parameters() {
         let url = "http://example.com/announce";
-        let info_hash = Arc::new(InfoHash::new(b"test info_hash"));
+        let info_hash = InfoHash::new(b"test info_hash").as_encoded();
         let peer_id = PeerID::default();
         let tracker_request = Tracker::new(url);
         let mut tracker_request = tracker_request

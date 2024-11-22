@@ -38,7 +38,7 @@ use chrono::{DateTime, Utc};
 use zung_parsers::bencode;
 
 pub use files::{FileAttr, FileTree, Files, SortOrd};
-pub use info::{Info, InfoHash};
+pub use info::{Info, InfoHash, InfoHashEncoded};
 
 use serde::{Deserialize, Serialize};
 

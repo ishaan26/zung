@@ -6,13 +6,12 @@
 //! types of sources based on the information contained in the [`MetaInfo`] file.
 
 use crate::{
-    meta_info::{InfoHash, MetaInfo},
+    meta_info::{InfoHashEncoded, MetaInfo},
     PeerID,
 };
 
 use anyhow::Result;
 use futures::stream::FuturesUnordered;
-use std::sync::Arc;
 use tokio::task::JoinHandle;
 
 mod http_seeders;
@@ -22,8 +21,6 @@ pub use http_seeders::{HttpSeeder, HttpSeederList};
 pub use trackers::{Action, Event, Tracker, TrackerList, TrackerRequest};
 
 /// Representing different data sources (trackers and HTTP seeders) for a torrent.
-///
-///
 ///
 /// This enum is constructed with the [`sources`](crate::Client::sources) method.
 #[derive(Debug, Clone)]
@@ -194,7 +191,7 @@ impl<'a> DownloadSources<'a> {
 
     pub fn tracker_requests(
         &self,
-        info_hash: Arc<InfoHash>,
+        info_hash: InfoHashEncoded,
         peer_id: PeerID,
     ) -> Option<FuturesUnordered<JoinHandle<Result<TrackerRequest>>>> {
         match self {

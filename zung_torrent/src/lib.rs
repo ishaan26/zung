@@ -15,7 +15,6 @@ use meta_info::MetaInfo;
 use clap::{Args, Subcommand};
 use meta_info::SortOrd;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 /// Interact with torrent on the commandline. Install the [`zung`](https://crates.io/crates/zung)
 /// crate and run `zung torrent --help` to see what options are available
@@ -77,7 +76,7 @@ impl TorrentArgs {
                 let torrent = Client::new(file)?;
                 let mut list = torrent
                     .sources()
-                    .tracker_requests(Arc::new(torrent.info_hash().clone()), torrent.peer_id())
+                    .tracker_requests(torrent.info_hash().as_encoded(), torrent.peer_id())
                     .unwrap();
 
                 // Waits for ALL futures to complete

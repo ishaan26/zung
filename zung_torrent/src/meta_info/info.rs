@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
     fmt::{Debug, Display},
+    ops::Deref,
 };
 
 use serde::{Deserialize, Serialize};
@@ -141,11 +142,19 @@ impl InfoHash {
     }
 
     /// Returns the infohash sha1 value as bytes.
+    #[inline]
     pub fn as_bytes(&self) -> [u8; 20] {
         self.sha1.digest().bytes()
     }
 
+    /// Returns the infohash sha1 value as bytes.
+    #[inline]
+    pub fn as_encoded(&self) -> InfoHashEncoded {
+        InfoHashEncoded(self.as_bytes())
+    }
+
     /// Url-encodes the infohash value.
+    #[inline]
     pub fn to_url_encoded(&self) -> String {
         let bytes = self.as_bytes();
         let mut buff = String::with_capacity(60);
@@ -168,6 +177,30 @@ impl Debug for InfoHash {
         f.debug_struct("InfoHash")
             .field("sha1", &self.to_string())
             .finish()
+    }
+}
+
+/// 20 byte encoded form of the [`InfoHash`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InfoHashEncoded([u8; 20]);
+
+impl InfoHashEncoded {
+    pub fn to_url_encoded(&self) -> String {
+        let bytes = **self;
+        let mut buff = String::with_capacity(60);
+        for byte in bytes {
+            buff.push('%');
+            buff.push_str(&hex::encode([byte]));
+        }
+        buff
+    }
+}
+
+impl Deref for InfoHashEncoded {
+    type Target = [u8; 20];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
