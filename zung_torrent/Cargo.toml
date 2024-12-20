@@ -14,22 +14,22 @@ default = ["client"]
 client = ["dep:colored", "dep:human_bytes"]
 
 [dependencies]
-anyhow = "1.0.89"
-bytes = { version = "1.7.2", features = ["serde"] }
-clap = { version = "4.5.18", features = ["derive"] }
+anyhow = "1.0.94"
+bytes = { version = "1.9.0", features = ["serde"] }
+clap = { version = "4.5.23", features = ["derive"] }
 hex = "0.4.3"
-chrono = { version = "0.4.38", features = ["serde"] }
+chrono = { version = "0.4.39", features = ["serde"] }
 sha1_smol = "1.0.1"
 rayon = "1.10.0"
-indexmap = "2.6.0"
+indexmap = "2.7.0"
 rand = "0.8.5"
-tokio = { version = "1.41.1", features = ["full"] }
+tokio = { version = "1.42.0", features = ["full"] }
 
-colored = { version = "2.1.0", optional = true }
+colored = { version = "2.2.0", optional = true }
 human_bytes = { version = "0.4.3", optional = true }
 
 
-serde = { version = "1.0.210", features = ["derive"] }
+serde = { version = "1.0.216", features = ["derive"] }
 serde_bytes = "0.11.15"
 serde_urlencoded = "0.7.1"
 
