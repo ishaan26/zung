@@ -178,7 +178,7 @@ pub enum SortOrd {
     Desending,
 }
 
-impl<'a> FileTree<'a> {
+impl FileTree<'_> {
     pub fn sort_by_name(&mut self, ord: SortOrd) {
         match ord {
             SortOrd::Ascending => self.node.sort_by_name_ascending(),
