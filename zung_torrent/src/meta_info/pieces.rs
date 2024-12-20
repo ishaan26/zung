@@ -15,7 +15,7 @@ pub struct Pieces {
 
 struct PiecesVisitor;
 
-impl<'de> Visitor<'de> for PiecesVisitor {
+impl Visitor<'_> for PiecesVisitor {
     type Value = Pieces;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
