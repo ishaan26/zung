@@ -1,0 +1,9 @@
+[package]
+name = "utilities"
+version = "0.1.0"
+edition = "2021"
+authors = ["Ishaan Goel <ishaangoel.99@gmail.com>"]
+
+[dependencies]
+
+zung_torrent = { version = "0.1.0", path = "../zung_torrent" }

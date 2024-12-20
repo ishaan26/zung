@@ -10,16 +10,18 @@ readme = "README.md"
 keywords = ["projects", "learning", "monolith"]
 
 [workspace]
-members = ["zung_mini", "zung_parsers"]
+members = ["zung_mini", "zung_parsers", "zung_torrent"]
 resolver = "2"
 
 [dependencies]
 zung_mini = { version = "0.4.0", path = "./zung_mini" }
 zung_parsers = { version = "0.1.1", path = "./zung_parsers" }
+zung_torrent = { version = "0.1.0", path = "./zung_torrent" }
 
 anyhow = "1.0.89"
 anstyle = "1.0.8"
 clap = { version = "4.5.20", features = ["derive"] }
+tokio = "1.41.1"
 
 
 [profile.release]
