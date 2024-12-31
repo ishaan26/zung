@@ -35,7 +35,7 @@ fn mit_source() {
 
     let sources = mit.sources();
 
-    assert!(sources.trackers().is_some());
+    assert!(sources.tracker_list().is_some());
 
     let http_sources = sources.http_seeders().expect("This should be some");
 
@@ -52,8 +52,10 @@ async fn kali_source() {
 
     let mut list = kali
         .sources()
-        .tracker_requests(kali.info_hash().as_encoded(), kali.peer_id())
-        .unwrap();
+        .tracker_list()
+        .unwrap()
+        .generate_requests(kali.info_hash().as_encoded(), kali.peer_id())
+        .await;
 
     // Waits for ALL futures to complete
     while let Some(result) = list.next().await {

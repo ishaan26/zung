@@ -8,8 +8,6 @@ pub mod sources;
 
 pub use client::Client;
 pub use client::PeerID;
-use colored::Colorize;
-use futures::StreamExt;
 use meta_info::MetaInfo;
 
 use clap::{Args, Subcommand};
@@ -74,23 +72,13 @@ impl TorrentArgs {
             }
             TorrentCommands::Test { file } => {
                 let torrent = Client::new(file)?;
-                let mut list = torrent
+                let list = torrent
                     .sources()
                     .tracker_requests(torrent.info_hash().as_encoded(), torrent.peer_id())
+                    .await
                     .unwrap();
 
-                // Waits for ALL futures to complete
-                while let Some(result) = list.next().await {
-                    match result {
-                        Ok(a) => match a {
-                            Ok(a) => println!("Connected! {}", a.to_url().unwrap().green()),
-                            Err(e) => println!("{}", e.to_string().red()),
-                        },
-                        Err(e) => {
-                            println!("{}", e.to_string().red())
-                        }
-                    }
-                }
+                println!("{list:#?}");
             }
         }
 

@@ -10,9 +10,7 @@ use crate::{
     PeerID,
 };
 
-use anyhow::Result;
-use futures::stream::FuturesUnordered;
-use tokio::task::JoinHandle;
+use futures::StreamExt;
 
 mod http_seeders;
 mod trackers;
@@ -113,13 +111,11 @@ impl<'a> DownloadSources<'a> {
     /// }
     /// # }
     /// ```
-    pub fn trackers(&self) -> Option<&TrackerList> {
-        if let Self::Trackers { tracker_list } = self {
-            Some(tracker_list)
-        } else if let Self::Hybrid { tracker_list, .. } = self {
-            Some(tracker_list)
-        } else {
-            None
+    pub fn tracker_list(&self) -> Option<&TrackerList> {
+        match self {
+            DownloadSources::Trackers { tracker_list }
+            | DownloadSources::Hybrid { tracker_list, .. } => Some(tracker_list),
+            DownloadSources::HttpSeeders { .. } => None,
         }
     }
 
@@ -189,17 +185,24 @@ impl<'a> DownloadSources<'a> {
         matches!(self, Self::Hybrid { .. })
     }
 
-    pub fn tracker_requests(
+    pub async fn tracker_requests(
         &self,
         info_hash: InfoHashEncoded,
         peer_id: PeerID,
-    ) -> Option<FuturesUnordered<JoinHandle<Result<TrackerRequest>>>> {
-        match self {
-            DownloadSources::Trackers { tracker_list }
-            | DownloadSources::Hybrid { tracker_list, .. } => {
-                Some(tracker_list.generate_requests(info_hash, peer_id))
+    ) -> Option<Vec<TrackerRequest>> {
+        if let Some(list) = self.tracker_list() {
+            let mut result = Vec::with_capacity(list.len());
+            let mut request_futures = list.generate_requests(info_hash, peer_id).await;
+            while let Some(request) = request_futures.next().await {
+                match request {
+                    Ok(Ok(tracker_request)) => result.push(tracker_request),
+                    Err(e) => eprintln!("{e}"),
+                    Ok(Err(e)) => eprintln!("{e}"),
+                }
             }
-            DownloadSources::HttpSeeders { .. } => None,
+            Some(result)
+        } else {
+            None
         }
     }
 }

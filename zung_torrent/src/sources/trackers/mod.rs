@@ -10,14 +10,14 @@
 mod request;
 pub use request::*;
 
-use std::ops::Deref;
 use std::sync::Arc;
+use std::{net::Ipv4Addr, ops::Deref};
 
 use crate::meta_info::InfoHashEncoded;
 use crate::PeerID;
 use anyhow::{bail, Result};
 use futures::stream::FuturesUnordered;
-use tokio::task::JoinHandle;
+use tokio::{net::UdpSocket, task::JoinHandle};
 
 // TODO: Look into SmallStr
 #[derive(Debug)]
@@ -58,6 +58,7 @@ impl Tracker {
 
     pub async fn generate_request(
         &self,
+        socket: Arc<UdpSocket>,
         info_hash: InfoHashEncoded,
         peer_id: PeerID,
     ) -> Result<TrackerRequest> {
@@ -72,10 +73,7 @@ impl Tracker {
                     Some(s) => s.0,
                     None => udp_url,
                 };
-                let connection = UdpConnectRequest::new()
-                    .await?
-                    .connect_with(udp_url)
-                    .await?;
+                let connection = UdpConnectRequest::new(socket).connect_with(udp_url).await?;
 
                 let connection_id = connection.connection_id();
                 Ok(TrackerRequest::Udp {
@@ -111,16 +109,21 @@ impl TrackerList {
     /// Asyncly generates the [`TrackerRequest`]
     ///
     // TODO: Revisit this if there is a faster more efficient way.
-    pub fn generate_requests(
+    pub async fn generate_requests(
         &self,
         info_hash: InfoHashEncoded,
         peer_id: PeerID,
     ) -> FuturesUnordered<JoinHandle<Result<TrackerRequest>>> {
+        let socket = Arc::new(UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap());
+
         self.as_array()
             .iter()
             .cloned() // The clone here is just Arc::clone
             .map(|tracker| {
-                tokio::spawn(async move { tracker.generate_request(info_hash, peer_id).await })
+                let socket = Arc::clone(&socket);
+                tokio::spawn(
+                    async move { tracker.generate_request(socket, info_hash, peer_id).await },
+                )
             })
             .collect()
     }
@@ -155,9 +158,10 @@ mod tracker_tests {
         let sample_url = "http://example.com/announce";
         let info_hash = InfoHash::new(b"test info_hash").as_encoded();
         let peer_id = PeerID::default();
+        let socket = Arc::new(UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap());
         let tracker_request = Tracker::new(sample_url);
         let tracker_request = tracker_request
-            .generate_request(info_hash, peer_id)
+            .generate_request(socket, info_hash, peer_id)
             .await
             .unwrap();
 
@@ -185,9 +189,10 @@ mod tracker_tests {
         let url = "http://example.com/announce";
         let info_hash = InfoHash::new(b"test info_hash").as_encoded();
         let peer_id = PeerID::default();
+        let socket = Arc::new(UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap());
         let tracker_request = Tracker::new(url);
         let tracker_request = tracker_request
-            .generate_request(info_hash, peer_id)
+            .generate_request(socket, info_hash, peer_id)
             .await
             .unwrap();
 
@@ -214,11 +219,11 @@ mod tracker_tests {
     async fn test_bool_as_int_serialization() {
         let url = "http://example.com/announce";
         let info_hash = InfoHash::new(b"test info_hash").as_encoded();
-
+        let socket = Arc::new(UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap());
         let peer_id = PeerID::default();
         let tracker_request = Tracker::new(url);
         let mut tracker_request = tracker_request
-            .generate_request(info_hash, peer_id)
+            .generate_request(socket, info_hash, peer_id)
             .await
             .unwrap();
 
@@ -258,10 +263,11 @@ mod tracker_tests {
     async fn test_optional_parameters() {
         let url = "http://example.com/announce";
         let info_hash = InfoHash::new(b"test info_hash").as_encoded();
+        let socket = Arc::new(UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap());
         let peer_id = PeerID::default();
         let tracker_request = Tracker::new(url);
         let mut tracker_request = tracker_request
-            .generate_request(info_hash, peer_id)
+            .generate_request(socket, info_hash, peer_id)
             .await
             .unwrap();
 

@@ -1,4 +1,3 @@
-use std::net::Ipv4Addr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -7,6 +6,7 @@ use serde::Serialize;
 
 use tokio::net::UdpSocket;
 use tokio::time::timeout;
+use zung_parsers::bencode;
 
 use crate::meta_info::InfoHashEncoded;
 use crate::PeerID;
@@ -51,6 +51,53 @@ impl TrackerRequest {
             Some(*connection_id)
         } else {
             None
+        }
+    }
+
+    /// Convert to url string for making a get request.
+    pub fn to_url(&self) -> Result<String> {
+        match self {
+            TrackerRequest::Http { url, params } => {
+                let announce = url;
+                let info_hash = params.info_hash.to_url_encoded();
+                let peer_id = params.peer_id.to_url_encoded();
+                let params = serde_urlencoded::to_string(params)?;
+
+                Ok(format!(
+                    "{announce}?info_hash={info_hash}&peer_id={peer_id}&{params}"
+                ))
+            }
+            TrackerRequest::Udp { url, .. } => Ok(url.to_string()),
+        }
+    }
+
+    pub fn set_uploaded(&mut self, uploaded: usize) {
+        match self {
+            TrackerRequest::Http { params, .. } => {
+                params.uploaded = uploaded;
+            }
+            TrackerRequest::Udp { params, .. } => {
+                params.uploaded = uploaded as i64;
+            }
+        }
+    }
+
+    pub async fn make_request(&self) -> Result<bencode::Value> {
+        match self {
+            TrackerRequest::Http { .. } => {
+                let url = self.to_url()?;
+                let request = timeout(REQUEST_TIMEOUT_DURATION, reqwest::get(&url))
+                    .await
+                    .with_context(|| format!("Connection Timed Out: {url}"))?
+                    .context("Failed to connect")?;
+                let response = request.bytes().await?;
+                let response: bencode::Value = bencode::from_bytes(&response)?;
+                Ok(response)
+            }
+            TrackerRequest::Udp { .. } => {
+                println!("To be implemented");
+                Ok(bencode::Value::Integer(3))
+            }
         }
     }
 }
@@ -243,59 +290,6 @@ impl Event {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-#[repr(i32)]
-pub enum Action {
-    Connect = 0,
-
-    Announce = 1,
-
-    Scrape = 2,
-
-    Error = 3,
-}
-
-impl Action {
-    pub fn from_i32(num: i32) -> Result<Self> {
-        match num {
-            0 => Ok(Action::Connect),
-            1 => Ok(Action::Announce),
-            2 => Ok(Action::Scrape),
-            3 => Ok(Action::Error),
-            num => bail!("Invalid action parameter: {num}"),
-        }
-    }
-}
-
-impl TrackerRequest {
-    pub fn to_url(&self) -> Result<String> {
-        match self {
-            TrackerRequest::Http { url, params } => {
-                let announce = url;
-                let info_hash = params.info_hash.to_url_encoded();
-                let peer_id = params.peer_id.to_url_encoded();
-                let params = serde_urlencoded::to_string(params)?;
-
-                Ok(format!(
-                    "{announce}?info_hash={info_hash}&peer_id={peer_id}&{params}"
-                ))
-            }
-            TrackerRequest::Udp { url, .. } => Ok(url.to_string()),
-        }
-    }
-
-    pub fn set_uploaded(&mut self, uploaded: usize) {
-        match self {
-            TrackerRequest::Http { params, .. } => {
-                params.uploaded = uploaded;
-            }
-            TrackerRequest::Udp { params, .. } => {
-                params.uploaded = uploaded as i64;
-            }
-        }
-    }
-}
-
 ///connect request:
 /// Offset  Size            Name            Value
 /// 0       64-bit integer  protocol_id     0x41727101980 // magic constant
@@ -304,7 +298,7 @@ impl TrackerRequest {
 /// 16
 #[derive(Debug)]
 pub struct UdpConnectRequest {
-    socket: UdpSocket, // TODO: Socket should not be here
+    socket: Arc<UdpSocket>,
     protocol_id: i64,
     action: Action,
     transaction_id: i32,
@@ -332,13 +326,13 @@ impl UdpConnectResponse {
 }
 
 impl UdpConnectRequest {
-    pub(crate) async fn new() -> Result<Self> {
-        Ok(Self {
-            socket: UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await?,
+    pub(crate) fn new(socket: Arc<UdpSocket>) -> Self {
+        Self {
+            socket,
             protocol_id: UDP_PROTOCOL_ID,
             action: Action::Connect,
             transaction_id: UDP_TRANSACTION_ID,
-        })
+        }
     }
 
     pub(crate) fn as_bytes(&self) -> [u8; 16] {
@@ -352,8 +346,7 @@ impl UdpConnectRequest {
     }
 
     pub(crate) async fn connect_with(&self, udp_url: &str) -> Result<UdpConnectResponse> {
-        let request = UdpConnectRequest::new().await?;
-        let request_bytes = request.as_bytes();
+        let request_bytes = self.as_bytes();
         let mut response = [0_u8; 16];
 
         let socket = &self.socket;
@@ -379,7 +372,7 @@ impl UdpConnectRequest {
             connection_id: i64::from_be_bytes(response[8..16].try_into()?),
         };
 
-        if udp_response.transaction_id == request.transaction_id {
+        if udp_response.transaction_id == self.transaction_id {
             Ok(udp_response)
         } else {
             bail!("Invalid response from udp server")
@@ -403,6 +396,30 @@ impl UdpTrackerRequestParams {
             key: 0,
             num_want: -1,
             port: 6886,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[repr(i32)]
+pub enum Action {
+    Connect = 0,
+
+    Announce = 1,
+
+    Scrape = 2,
+
+    Error = 3,
+}
+
+impl Action {
+    pub fn from_i32(num: i32) -> Result<Self> {
+        match num {
+            0 => Ok(Action::Connect),
+            1 => Ok(Action::Announce),
+            2 => Ok(Action::Scrape),
+            3 => Ok(Action::Error),
+            num => bail!("Invalid action parameter: {num}"),
         }
     }
 }

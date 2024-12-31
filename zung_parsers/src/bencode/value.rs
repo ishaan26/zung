@@ -1,12 +1,10 @@
 use serde::{
+    de::Visitor,
     ser::{SerializeMap, SerializeSeq},
-    Serialize, Serializer,
+    Deserialize, Serialize, Serializer,
 };
 
-use std::{
-    collections::HashMap,
-    fmt::{self},
-};
+use std::{collections::HashMap, fmt};
 
 /// Representation of Bencode values in Rust.
 #[derive(Debug, Clone, PartialEq)]
@@ -68,6 +66,76 @@ impl Serialize for Value {
                 map.end()
             }
         }
+    }
+}
+
+impl<'de> Deserialize<'de> for Value {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct ValueVisitor;
+
+        impl<'de> Visitor<'de> for ValueVisitor {
+            type Value = Value;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a bencode value")
+            }
+
+            fn visit_i64<E>(self, value: i64) -> Result<Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(Value::Integer(value))
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(Value::String(value.to_owned()))
+            }
+
+            fn visit_bytes<E>(self, value: &[u8]) -> Result<Value, E>
+            where
+                E: serde::de::Error,
+            {
+                // Try to convert to UTF-8 string first
+                match std::str::from_utf8(value) {
+                    Ok(s) => Ok(Value::String(s.to_owned())),
+                    Err(_) => Ok(Value::Bytes(value.to_vec())),
+                }
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Value, A::Error>
+            where
+                A: serde::de::SeqAccess<'de>,
+            {
+                let mut values = Vec::new();
+
+                while let Some(value) = seq.next_element()? {
+                    values.push(value);
+                }
+
+                Ok(Value::List(values))
+            }
+
+            fn visit_map<M>(self, mut access: M) -> Result<Value, M::Error>
+            where
+                M: serde::de::MapAccess<'de>,
+            {
+                let mut map = HashMap::new();
+
+                while let Some((key, value)) = access.next_entry()? {
+                    map.insert(key, value);
+                }
+
+                Ok(Value::Dictionary(map))
+            }
+        }
+
+        deserializer.deserialize_any(ValueVisitor)
     }
 }
 
