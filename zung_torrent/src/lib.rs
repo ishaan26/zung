@@ -72,13 +72,10 @@ impl TorrentArgs {
             }
             TorrentCommands::Test { file } => {
                 let torrent = Client::new(file)?;
-                let list = torrent
+                torrent
                     .sources()
-                    .tracker_requests(torrent.info_hash().as_encoded(), torrent.peer_id())
-                    .await
-                    .unwrap();
-
-                println!("{list:#?}");
+                    .tracker_responses(torrent.info_hash().as_encoded(), torrent.peer_id())
+                    .await;
             }
         }
 

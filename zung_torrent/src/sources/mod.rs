@@ -10,6 +10,7 @@ use crate::{
     PeerID,
 };
 
+use colored::Colorize;
 use futures::StreamExt;
 
 mod http_seeders;
@@ -201,6 +202,38 @@ impl<'a> DownloadSources<'a> {
                 }
             }
             Some(result)
+        } else {
+            None
+        }
+    }
+
+    pub async fn tracker_responses(
+        &self,
+        info_hash: InfoHashEncoded,
+        peer_id: PeerID,
+    ) -> Option<()> {
+        if let Some(list) = self.tracker_list() {
+            let request_futures = list.generate_requests(info_hash, peer_id).await;
+            request_futures
+                .for_each_concurrent(None, |request| async move {
+                    println!("Connecting");
+                    match request {
+                        Ok(Ok(tracker_request)) => {
+                            let _ = tokio::spawn(async move {
+                                println!("{}", "from thread".green());
+                                let a = tracker_request.make_request().await;
+                                if let Ok(resp) = a {
+                                    println!("{resp}")
+                                }
+                            })
+                            .await;
+                        }
+                        Err(e) => eprintln!("{e}"),
+                        Ok(Err(e)) => eprintln!("{e}"),
+                    }
+                })
+                .await;
+            Some(())
         } else {
             None
         }
