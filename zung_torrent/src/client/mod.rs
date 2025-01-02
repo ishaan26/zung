@@ -15,7 +15,7 @@ use std::{
 
 use crate::{
     meta_info::{FileTree, InfoHash, SortOrd},
-    sources::{DownloadSources, HttpSeederList, TrackerList},
+    sources::{DownloadSources, HttpSeederList, Tracker},
     MetaInfo,
 };
 
@@ -356,7 +356,7 @@ impl Client {
     /// Prints the download sources generated from the [`MetaInfo`] file to stdout.
     pub fn print_download_sources(&self) {
         #[inline]
-        fn print_trackers(tracker_list: TrackerList) {
+        fn print_trackers(tracker_list: Vec<Tracker>) {
             print_header("Trackers");
             for (mut i, tracker) in tracker_list.iter().enumerate() {
                 i += 1;

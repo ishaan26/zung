@@ -3,11 +3,11 @@
 #[cfg(feature = "client")]
 mod client;
 pub mod meta_info;
-// pub mod parked_sources;
 pub mod sources;
 
 pub use client::Client;
 pub use client::PeerID;
+use colored::Colorize;
 use meta_info::MetaInfo;
 
 use clap::{Args, Subcommand};
@@ -72,10 +72,14 @@ impl TorrentArgs {
             }
             TorrentCommands::Test { file } => {
                 let torrent = Client::new(file)?;
-                torrent
+                let tracker = torrent
                     .sources()
-                    .tracker_responses(torrent.info_hash().as_encoded(), torrent.peer_id())
-                    .await;
+                    .connect(torrent.info_hash().as_encoded(), torrent.peer_id())
+                    .await
+                    .unwrap();
+                for t in tracker {
+                    println!("Recived response: {}", t.url().green())
+                }
             }
         }
 

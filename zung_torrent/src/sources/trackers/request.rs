@@ -95,7 +95,7 @@ impl TrackerRequest {
                 Ok(response)
             }
             TrackerRequest::Udp { .. } => {
-                println!("To be implemented");
+                println!("To be implemented {}", self.to_url()?);
                 Ok(bencode::Value::Integer(3))
             }
         }

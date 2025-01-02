@@ -5,19 +5,28 @@
 //! sources from metadata, allowing a torrent client to efficiently pull data from either or both
 //! types of sources based on the information contained in the [`MetaInfo`] file.
 
+use std::{
+    net::Ipv4Addr,
+    sync::{Arc, Mutex},
+};
+
 use crate::{
     meta_info::{InfoHashEncoded, MetaInfo},
     PeerID,
 };
 
 use colored::Colorize;
-use futures::StreamExt;
+use futures::{stream::FuturesUnordered, StreamExt};
 
 mod http_seeders;
 mod trackers;
 
+use anyhow::Result;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use tokio::{net::UdpSocket, task::JoinHandle};
+
 pub use http_seeders::{HttpSeeder, HttpSeederList};
-pub use trackers::{Action, Event, Tracker, TrackerList, TrackerRequest};
+pub use trackers::{Action, Event, Tracker, TrackerRequest};
 
 /// Representing different data sources (trackers and HTTP seeders) for a torrent.
 ///
@@ -26,7 +35,7 @@ pub use trackers::{Action, Event, Tracker, TrackerList, TrackerRequest};
 pub enum DownloadSources<'a> {
     /// Genarated if only `announce` or `announce_list` keys are specified in the [`MetaInfo`]
     /// file.
-    Trackers { tracker_list: TrackerList },
+    Trackers { tracker_list: Vec<Tracker> },
 
     /// Genarated if only `url_list` key is specified in the [`MetaInfo`] file.
     HttpSeeders {
@@ -36,24 +45,24 @@ pub enum DownloadSources<'a> {
     /// Genarated if both `announce` / `announce_list` and `url_list` keys are specified in the
     /// [`MetaInfo`] file.
     Hybrid {
-        tracker_list: TrackerList,
+        tracker_list: Vec<Tracker>,
         http_seeder_list: HttpSeederList<'a>,
     },
 }
 
 impl<'a> DownloadSources<'a> {
     pub fn new(meta_info: &'a MetaInfo) -> Self {
-        fn tracker_list(meta_info: &MetaInfo) -> TrackerList {
+        fn tracker_list(meta_info: &MetaInfo) -> Vec<Tracker> {
             // As per the torrent specification, if the `announce_list` field is present, the
             // `announce` field is ignored.
             if let Some(announce_list) = meta_info.announce_list() {
-                let mut tracker_list = Vec::new();
-                for tracker_url in announce_list.iter().flatten() {
-                    tracker_list.push(Tracker::new(tracker_url));
-                }
-                TrackerList::new(tracker_list)
+                announce_list
+                    .par_iter()
+                    .flatten()
+                    .map(|announce| Tracker::new(announce))
+                    .collect()
             } else if let Some(announce) = meta_info.announce() {
-                TrackerList::new(vec![Tracker::new(announce)])
+                vec![Tracker::new(announce)]
             } else {
                 unreachable!()
             }
@@ -112,7 +121,7 @@ impl<'a> DownloadSources<'a> {
     /// }
     /// # }
     /// ```
-    pub fn tracker_list(&self) -> Option<&TrackerList> {
+    pub fn tracker_list(&self) -> Option<&Vec<Tracker>> {
         match self {
             DownloadSources::Trackers { tracker_list }
             | DownloadSources::Hybrid { tracker_list, .. } => Some(tracker_list),
@@ -166,7 +175,7 @@ impl<'a> DownloadSources<'a> {
     }
 
     /// Returns the hybrid_sources, if any, contained in the [`DownloadSources`].
-    pub fn hybrid(&self) -> Option<(&TrackerList, &HttpSeederList)> {
+    pub fn hybrid(&self) -> Option<(&Vec<Tracker>, &HttpSeederList)> {
         if let Self::Hybrid {
             tracker_list,
             http_seeder_list,
@@ -186,56 +195,99 @@ impl<'a> DownloadSources<'a> {
         matches!(self, Self::Hybrid { .. })
     }
 
-    pub async fn tracker_requests(
+    pub async fn connect(
         &self,
         info_hash: InfoHashEncoded,
         peer_id: PeerID,
-    ) -> Option<Vec<TrackerRequest>> {
+    ) -> Option<Vec<Tracker>> {
         if let Some(list) = self.tracker_list() {
-            let mut result = Vec::with_capacity(list.len());
-            let mut request_futures = list.generate_requests(info_hash, peer_id).await;
-            while let Some(request) = request_futures.next().await {
-                match request {
-                    Ok(Ok(tracker_request)) => result.push(tracker_request),
-                    Err(e) => eprintln!("{e}"),
-                    Ok(Err(e)) => eprintln!("{e}"),
-                }
-            }
-            Some(result)
-        } else {
-            None
-        }
-    }
+            let futures: FuturesUnordered<JoinHandle<Result<Tracker>>> = list
+                .iter()
+                .cloned()
+                .map(|tracker| {
+                    tokio::spawn(async move {
+                        let socket =
+                            Arc::new(UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap());
+                        tracker.connect(socket, info_hash, peer_id).await
+                    })
+                })
+                .collect();
 
-    pub async fn tracker_responses(
-        &self,
-        info_hash: InfoHashEncoded,
-        peer_id: PeerID,
-    ) -> Option<()> {
-        if let Some(list) = self.tracker_list() {
-            let request_futures = list.generate_requests(info_hash, peer_id).await;
-            request_futures
-                .for_each_concurrent(None, |request| async move {
-                    println!("Connecting");
-                    match request {
-                        Ok(Ok(tracker_request)) => {
-                            let _ = tokio::spawn(async move {
-                                println!("{}", "from thread".green());
-                                let a = tracker_request.make_request().await;
-                                if let Ok(resp) = a {
-                                    println!("{resp}")
-                                }
-                            })
-                            .await;
+            let result = Arc::new(Mutex::new(Vec::with_capacity(list.len())));
+
+            futures
+                .for_each_concurrent(None, |connection| {
+                    let result = Arc::clone(&result);
+                    async move {
+                        match connection {
+                            Ok(Ok(value)) => {
+                                println!("Connected with {}", value.url());
+                                result.lock().expect("thread failed").push(value);
+                            }
+                            Ok(Err(e)) => eprintln!("{}", e.to_string().red()),
+                            Err(e) => eprintln!("{}", e.to_string().red()),
                         }
-                        Err(e) => eprintln!("{e}"),
-                        Ok(Err(e)) => eprintln!("{e}"),
                     }
                 })
                 .await;
-            Some(())
-        } else {
-            None
+
+            let vec = Arc::try_unwrap(result).unwrap().into_inner().unwrap();
+            return Some(vec);
         }
+
+        None
     }
+
+    // pub async fn tracker_requests(
+    //     &self,
+    //     info_hash: InfoHashEncoded,
+    //     peer_id: PeerID,
+    // ) -> Option<Vec<TrackerRequest>> {
+    //     if let Some(list) = self.tracker_list() {
+    //         let mut result = Vec::with_capacity(list.len());
+    //         let mut request_futures = list.generate_requests(info_hash, peer_id).await;
+    //         while let Some(request) = request_futures.next().await {
+    //             match request {
+    //                 Ok(Ok(tracker_request)) => result.push(tracker_request),
+    //                 Err(e) => eprintln!("{e}"),
+    //                 Ok(Err(e)) => eprintln!("{e}"),
+    //             }
+    //         }
+    //         Some(result)
+    //     } else {
+    //         None
+    //     }
+    // }
+    //
+    // pub async fn tracker_responses(
+    //     &self,
+    //     info_hash: InfoHashEncoded,
+    //     peer_id: PeerID,
+    // ) -> Option<()> {
+    //     if let Some(list) = self.tracker_list() {
+    //         let request_futures = list.generate_requests(info_hash, peer_id).await;
+    //         request_futures
+    //             .for_each_concurrent(None, |request| async move {
+    //                 println!("Connecting");
+    //                 match request {
+    //                     Ok(Ok(tracker_request)) => {
+    //                         let _ = tokio::spawn(async move {
+    //                             println!("{}", "from thread".green());
+    //                             let a = tracker_request.make_request().await;
+    //                             if let Ok(resp) = a {
+    //                                 println!("{resp}")
+    //                             }
+    //                         })
+    //                         .await;
+    //                     }
+    //                     Err(e) => eprintln!("{e}"),
+    //                     Ok(Err(e)) => eprintln!("{e}"),
+    //                 }
+    //             })
+    //             .await;
+    //         Some(())
+    //     } else {
+    //         None
+    //     }
+    // }
 }

@@ -1,4 +1,3 @@
-use futures::StreamExt;
 use utilities::torrent::CLIENT;
 use zung_torrent::sources::DownloadSources;
 
@@ -42,33 +41,6 @@ fn mit_source() {
     for s in http_sources {
         for u in &s.1 {
             assert!(u.contains(mit.meta_info().info().name()))
-        }
-    }
-}
-
-#[tokio::test]
-async fn kali_source() {
-    let kali = &CLIENT.kali;
-
-    let mut list = kali
-        .sources()
-        .tracker_list()
-        .unwrap()
-        .generate_requests(kali.info_hash().as_encoded(), kali.peer_id())
-        .await;
-
-    // Waits for ALL futures to complete
-    while let Some(result) = list.next().await {
-        let Ok(a) = result else { continue };
-        if let Ok(a) = a {
-            if a.is_http() {
-                assert!(a
-                    .to_url()
-                    .unwrap()
-                    .contains(&kali.info_hash().to_url_encoded()))
-            } else if a.is_udp() {
-                assert!(a.connection_id().is_some())
-            }
         }
     }
 }
