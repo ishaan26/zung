@@ -18,10 +18,12 @@ use crate::PeerID;
 use anyhow::{bail, Result};
 use tokio::net::UdpSocket;
 
+// TODO: Need inplace mutation of the tracker type, maybe the following will work??:
+//struct Tracker { inner: Arc<Mutex<TrackerInner>>}
 #[derive(Debug, Clone)]
 pub struct Tracker {
     url: TrackerUrl,
-    response: Box<bencode::Value>,
+    response: bencode::Value,
     connected: bool,
     trys: u8,
 }
@@ -30,7 +32,7 @@ impl Tracker {
     pub fn new(url: &str) -> Self {
         Self {
             url: TrackerUrl::new(url),
-            response: Box::new(bencode::Value::Integer(0)),
+            response: bencode::Value::Integer(0),
             connected: false,
             trys: 0,
         }
@@ -57,11 +59,23 @@ impl Tracker {
         // Make the HTTP or UDP request to recive a TrackerResponse
         let response = request.make_request().await?;
 
-        self.response = Box::new(response);
+        self.response = response;
         self.connected = true;
         self.trys += 1;
 
         Ok(self)
+    }
+
+    pub fn is_connected(&self) -> bool {
+        self.connected
+    }
+
+    pub fn trys(&self) -> u8 {
+        self.trys
+    }
+
+    pub fn response(&self) -> &bencode::Value {
+        &self.response
     }
 }
 

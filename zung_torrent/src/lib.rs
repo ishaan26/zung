@@ -77,8 +77,15 @@ impl TorrentArgs {
                     .connect(torrent.info_hash().as_encoded(), torrent.peer_id())
                     .await
                     .unwrap();
+
                 for t in tracker {
-                    println!("Recived response: {}", t.url().green())
+                    if t.is_connected() {
+                        println!(
+                            "{} -> Recieved response: {}",
+                            t.url().cyan(),
+                            t.response().to_string().green()
+                        )
+                    }
                 }
             }
         }
