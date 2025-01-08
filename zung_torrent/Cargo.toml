@@ -25,7 +25,7 @@ indexmap = "2.7.0"
 rand = "0.8.5"
 tokio = { version = "1.42.0", features = ["full"] }
 
-colored = { version = "2.2.0", optional = true }
+colored = { version = "3.0.0", optional = true }
 human_bytes = { version = "0.4.3", optional = true }
 
 

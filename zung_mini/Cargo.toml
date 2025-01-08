@@ -12,6 +12,6 @@ keywords = ["projects", "learning", "mini"]
 [dependencies]
 clap = { version = "4.5.23", features = ["derive"] }
 indicatif = "0.17"
-colored = "2.2.0"
+colored = "3.0.0"
 rand = "0.8"
 prettytable = "0.10.0"
