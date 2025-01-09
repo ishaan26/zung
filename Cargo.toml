@@ -18,11 +18,12 @@ zung_mini = { version = "0.4.0", path = "./zung_mini" }
 zung_parsers = { version = "0.1.1", path = "./zung_parsers" }
 zung_torrent = { version = "0.1.0", path = "./zung_torrent" }
 
-anyhow = "1.0.94"
+anyhow = "1.0.95"
 anstyle = "1.0.10"
 clap = { version = "4.5.23", features = ["derive"] }
-tokio = "1.42.0"
-
+tokio = { version = "1.42.0", features = ["macros", "rt-multi-thread"] }
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+tracing = { version = "0.1.41", features = ["release_max_level_info"] }
 
 [profile.release]
 strip = true      # Automatically strip symbols from the binary.

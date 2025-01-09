@@ -25,6 +25,20 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt()
+        // all spans/events with a level higher than TRACE (e.g, info, warn, etc.)
+        // will be written to stdout.
+        .with_env_filter("zung=trace")
+        .without_time()
+        .compact()
+        // display source code file paths
+        .with_file(false)
+        // display source code line numbers
+        .with_line_number(false)
+        // disable targets
+        .with_target(false)
+        .init(); // sets this to be the default, global subscriber for this application.
+
     let cli = Cli::parse();
 
     match cli.commands {

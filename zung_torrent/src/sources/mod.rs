@@ -26,6 +26,7 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use tokio::{net::UdpSocket, task::JoinHandle};
 
 pub use http_seeders::{HttpSeeder, HttpSeederList};
+use tracing::error;
 pub use trackers::{Action, Event, Tracker, TrackerRequest};
 
 /// Representing different data sources (trackers and HTTP seeders) for a torrent.
@@ -112,7 +113,7 @@ impl<'a> DownloadSources<'a> {
     ///use zung_torrent::sources::DownloadSources;
     ///
     /// # fn ughhh(download_sources: DownloadSources) {
-    /// if let Some(tracker_list) = download_sources.trackers() {
+    /// if let Some(tracker_list) = download_sources.tracker_list() {
     ///     for source in tracker_list {
     ///         // Process each tracker
     ///     }
@@ -224,8 +225,8 @@ impl<'a> DownloadSources<'a> {
                                 println!("Connected with {}", value.url());
                                 result.lock().expect("thread failed").push(value);
                             }
-                            Ok(Err(e)) => eprintln!("{}", e.to_string().red()),
-                            Err(e) => eprintln!("{}", e.to_string().red()),
+                            Ok(Err(e)) => error!("{}", e.to_string().red()),
+                            Err(e) => error!("{}", e.to_string().red()),
                         }
                     }
                 })

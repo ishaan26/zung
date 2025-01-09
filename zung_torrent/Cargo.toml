@@ -25,17 +25,18 @@ sha1_smol = "1.0.1"
 rayon = "1.10.0"
 indexmap = "2.7.0"
 rand = "0.8.5"
-tokio = { version = "1.42.0", features = ["full"] }
 human_bytes = { version = "0.4.3", optional = true }
 reqwest = "0.12.11"
+tracing = "0.1.41"
 
+tokio = { version = "1.42.0", features = ["net", "rt", "macros"] }
+futures = "0.3.31"
 
 serde = { version = "1.0.216", features = ["derive"] }
 serde_bytes = "0.11.15"
 serde_urlencoded = "0.7.1"
 
 zung_parsers = { version = "0.1.1", path = "../zung_parsers" }
-futures = "0.3.31"
 
 [dev-dependencies]
 utilities = { path = "../utilities" }

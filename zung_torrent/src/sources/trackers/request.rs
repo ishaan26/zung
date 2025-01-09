@@ -1,11 +1,12 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use serde::Serialize;
 
 use tokio::net::UdpSocket;
 use tokio::time::timeout;
+use tracing::{instrument, trace, warn};
 use zung_parsers::bencode;
 
 use crate::meta_info::InfoHashEncoded;
@@ -82,6 +83,7 @@ impl TrackerRequest {
         }
     }
 
+    #[instrument(skip_all, name = "Tracker Request")]
     pub async fn make_request(&self) -> Result<bencode::Value> {
         match self {
             TrackerRequest::Http { .. } => {
@@ -89,14 +91,20 @@ impl TrackerRequest {
                 let request = timeout(REQUEST_TIMEOUT_DURATION, reqwest::get(&url))
                     .await
                     .with_context(|| format!("Connection Timed Out: {url}"))?
-                    .context("Failed to connect")?;
+                    .context(format!("Failed to connect: {url}"))?;
+
+                trace!(url, "Request made successfully");
+
                 let response = request.bytes().await?;
                 let response: bencode::Value = bencode::from_bytes(&response)?;
+
+                trace!(url, response = response.to_string(), "Received response");
+
                 Ok(response)
             }
             TrackerRequest::Udp { .. } => {
-                println!("To be implemented {}", self.to_url()?);
-                Ok(bencode::Value::Integer(3))
+                warn!(url = self.to_url()?, "UDP connection is to be implemented");
+                Err(anyhow!(""))
             }
         }
     }
@@ -345,6 +353,7 @@ impl UdpConnectRequest {
         bytes
     }
 
+    #[instrument(name = "udp_connect_request", skip(self))]
     pub(crate) async fn connect_with(&self, udp_url: &str) -> Result<UdpConnectResponse> {
         let request_bytes = self.as_bytes();
         let mut response = [0_u8; 16];
@@ -354,17 +363,23 @@ impl UdpConnectRequest {
         timeout(REQUEST_TIMEOUT_DURATION, socket.connect(udp_url))
             .await
             .with_context(|| format!("Connection Timed Out: {udp_url}"))?
-            .context("Failed to connect")?;
+            .context(format!("Failed to connect: {udp_url}"))?;
+
+        trace!("Connected");
 
         timeout(REQUEST_TIMEOUT_DURATION, socket.send(&request_bytes))
             .await
             .with_context(|| format!("Send Timed Out: {udp_url}"))?
             .context("Sending connect request")?;
 
+        trace!("Request Sent");
+
         timeout(REQUEST_TIMEOUT_DURATION, socket.recv(&mut response))
             .await
             .with_context(|| format!("Recieve Timed Out: {udp_url}"))?
-            .context("Failed to recieve any response")?;
+            .context("Failed to recieve any response: {udp_url}")?;
+
+        trace!("Response Recieved");
 
         let udp_response = UdpConnectResponse {
             action: Action::from_i32(i32::from_be_bytes(response[0..4].try_into()?))?,
