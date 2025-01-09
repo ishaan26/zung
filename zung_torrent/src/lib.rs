@@ -73,14 +73,16 @@ impl TorrentArgs {
             TorrentCommands::Test { file } => {
                 let torrent = Client::new(file)?;
 
-                let list = torrent
-                    .sources()
-                    .connect_all(torrent.info_hash().as_encoded(), torrent.peer_id())
-                    .await
-                    .unwrap();
+                let sources = torrent.sources();
 
-                for t in list {
-                    println!("{} -> {}", t.url().cyan(), t.is_connected())
+                sources
+                    .connect_all(torrent.info_hash().as_encoded(), torrent.peer_id())
+                    .await;
+
+                if let Some(list) = sources.tracker_list() {
+                    for t in list {
+                        println!("{} -> {}", t.url().cyan(), t.is_connected())
+                    }
                 }
             }
         }

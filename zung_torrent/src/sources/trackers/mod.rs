@@ -12,8 +12,9 @@ pub use request::*;
 
 use zung_parsers::bencode;
 
-use anyhow::{bail, Result};
-use std::sync::Arc;
+use anyhow::{anyhow, bail, Result};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
 use tokio::net::UdpSocket;
 
 use crate::meta_info::InfoHashEncoded;
@@ -21,23 +22,41 @@ use crate::PeerID;
 
 // TODO: Need inplace mutation of the tracker type, maybe the following will work??:
 //struct Tracker { inner: Arc<Mutex<TrackerInner>>}
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Tracker {
     url: TrackerUrl,
-    request: TrackerRequest,
-    response: bencode::Value,
-    connected: bool,
-    trys: u8,
+    inner: Arc<TrackerInner>,
+}
+
+#[derive(Debug)]
+struct TrackerInner {
+    request: Mutex<TrackerRequest>,
+    response: Mutex<bencode::Value>,
+    connected: AtomicBool,
+    trys: AtomicU32,
+}
+
+impl Clone for Tracker {
+    fn clone(&self) -> Self {
+        Self {
+            url: self.url.clone(),
+            inner: Arc::clone(&self.inner),
+        }
+    }
 }
 
 impl Tracker {
     pub fn new(url: &str) -> Self {
+        let inner = TrackerInner {
+            request: Mutex::new(TrackerRequest::Empty),
+            response: Mutex::new(bencode::Value::Integer(0)),
+            connected: AtomicBool::new(false),
+            trys: AtomicU32::new(0),
+        };
+
         Self {
             url: TrackerUrl::new(url),
-            request: TrackerRequest::Empty,
-            response: bencode::Value::Integer(0),
-            connected: false,
-            trys: 0,
+            inner: Arc::new(inner),
         }
     }
 
@@ -46,11 +65,11 @@ impl Tracker {
     }
 
     pub async fn connect(
-        mut self,
+        &self,
         socket: Arc<UdpSocket>,
         info_hash: InfoHashEncoded,
         peer_id: PeerID,
-    ) -> Result<Self> {
+    ) -> Result<()> {
         // Generate Tracker request.
         // - Http => Generates a url.
         // - UDP => Sends a UDP connect request
@@ -62,24 +81,45 @@ impl Tracker {
         // Make the HTTP or UDP request to recive a TrackerResponse
         let response = request.make_request().await?;
 
-        self.connected = true;
-        self.request = request;
-        self.response = response;
-        self.trys += 1;
+        self.inner.connected.store(true, Ordering::Relaxed);
+        self.inner.trys.fetch_add(1, Ordering::SeqCst);
 
-        Ok(self)
+        self.set_request(request)?;
+        self.set_response(response)?;
+
+        Ok(())
     }
 
     pub fn is_connected(&self) -> bool {
-        self.connected
+        self.inner.connected.load(Ordering::Relaxed)
     }
 
-    pub fn trys(&self) -> u8 {
-        self.trys
+    pub fn trys(&self) -> u32 {
+        self.inner.trys.load(Ordering::Relaxed)
     }
 
-    pub fn response(&self) -> &bencode::Value {
-        &self.response
+    pub(crate) fn set_request(&self, request: TrackerRequest) -> Result<()> {
+        let mut guard = self
+            .inner
+            .request
+            .lock()
+            .map_err(|e| anyhow!("Lock poisened while setting request: {e}"))?;
+
+        *guard = request;
+
+        Ok(())
+    }
+
+    pub(crate) fn set_response(&self, response: bencode::Value) -> Result<()> {
+        let mut guard = self
+            .inner
+            .response
+            .lock()
+            .map_err(|e| anyhow!("Lock poisened while setting response: {e}"))?;
+
+        *guard = response;
+
+        Ok(())
     }
 }
 

@@ -5,10 +5,7 @@
 //! sources from metadata, allowing a torrent client to efficiently pull data from either or both
 //! types of sources based on the information contained in the [`MetaInfo`] file.
 
-use std::{
-    net::Ipv4Addr,
-    sync::{Arc, Mutex},
-};
+use std::{net::Ipv4Addr, sync::Arc};
 
 use crate::{
     meta_info::{InfoHashEncoded, MetaInfo},
@@ -24,7 +21,7 @@ mod trackers;
 use anyhow::Result;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use tokio::{net::UdpSocket, task::JoinHandle};
-use tracing::{error, info};
+use tracing::error;
 
 pub use http_seeders::{HttpSeeder, HttpSeederList};
 pub use trackers::{Action, Event, Tracker, TrackerRequest};
@@ -197,13 +194,9 @@ impl<'a> DownloadSources<'a> {
         matches!(self, Self::Hybrid { .. })
     }
 
-    pub async fn connect_all(
-        &self,
-        info_hash: InfoHashEncoded,
-        peer_id: PeerID,
-    ) -> Option<Vec<Tracker>> {
+    pub async fn connect_all(&self, info_hash: InfoHashEncoded, peer_id: PeerID) {
         if let Some(list) = self.tracker_list() {
-            let futures: FuturesUnordered<JoinHandle<Result<Tracker>>> = list
+            let futures: FuturesUnordered<JoinHandle<Result<()>>> = list
                 .iter()
                 .cloned()
                 .map(|tracker| {
@@ -215,28 +208,58 @@ impl<'a> DownloadSources<'a> {
                 })
                 .collect();
 
-            let result = Arc::new(Mutex::new(Vec::with_capacity(list.len())));
-
             futures
-                .for_each_concurrent(None, |connection| {
-                    let result = Arc::clone(&result);
-                    async move {
-                        match connection {
-                            Ok(Ok(value)) => {
-                                info!("Connected with {}", value.url());
-                                result.lock().expect("thread failed").push(value);
-                            }
-                            Ok(Err(e)) => error!("{}", e.to_string().red()),
-                            Err(e) => error!("{}", e.to_string().red()),
-                        }
+                .for_each_concurrent(None, |connection| async move {
+                    match connection {
+                        Ok(Ok(_)) => {}
+                        Ok(Err(e)) => error!("{}", e.to_string().red()),
+                        Err(e) => error!("{}", e.to_string().red()),
                     }
                 })
                 .await;
-
-            let vec = Arc::try_unwrap(result).unwrap().into_inner().unwrap();
-            return Some(vec);
         }
-
-        None
     }
+
+    // pub async fn connect_all(
+    //     &self,
+    //     info_hash: InfoHashEncoded,
+    //     peer_id: PeerID,
+    // ) -> Option<Vec<Tracker>> {
+    //     if let Some(list) = self.tracker_list() {
+    //         let futures: FuturesUnordered<JoinHandle<Result<Tracker>>> = list
+    //             .iter()
+    //             .cloned()
+    //             .map(|tracker| {
+    //                 tokio::spawn(async move {
+    //                     let socket =
+    //                         Arc::new(UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap());
+    //                     tracker.connect(socket, info_hash, peer_id).await
+    //                 })
+    //             })
+    //             .collect();
+    //
+    //         let result = Arc::new(Mutex::new(Vec::with_capacity(list.len())));
+    //
+    //         futures
+    //             .for_each_concurrent(None, |connection| {
+    //                 let result = Arc::clone(&result);
+    //                 async move {
+    //                     match connection {
+    //                         Ok(Ok(value)) => {
+    //                             info!("Connected with {}", value.url());
+    //                             result.lock().expect("thread failed").push(value);
+    //                         }
+    //                         Ok(Err(e)) => error!("{}", e.to_string().red()),
+    //                         Err(e) => error!("{}", e.to_string().red()),
+    //                     }
+    //                 }
+    //             })
+    //             .await;
+    //
+    //         let vec = Arc::try_unwrap(result).unwrap().into_inner().unwrap();
+    //         return Some(vec);
+    //     }
+    //
+    //     None
+    // }
 }
