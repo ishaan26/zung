@@ -26,7 +26,7 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use tokio::{net::UdpSocket, task::JoinHandle};
 
 pub use http_seeders::{HttpSeeder, HttpSeederList};
-use tracing::error;
+use tracing::{error, info};
 pub use trackers::{Action, Event, Tracker, TrackerRequest};
 
 /// Representing different data sources (trackers and HTTP seeders) for a torrent.
@@ -196,7 +196,7 @@ impl<'a> DownloadSources<'a> {
         matches!(self, Self::Hybrid { .. })
     }
 
-    pub async fn connect(
+    pub async fn connect_all(
         &self,
         info_hash: InfoHashEncoded,
         peer_id: PeerID,
@@ -222,7 +222,7 @@ impl<'a> DownloadSources<'a> {
                     async move {
                         match connection {
                             Ok(Ok(value)) => {
-                                println!("Connected with {}", value.url());
+                                info!("Connected with {}", value.url());
                                 result.lock().expect("thread failed").push(value);
                             }
                             Ok(Err(e)) => error!("{}", e.to_string().red()),

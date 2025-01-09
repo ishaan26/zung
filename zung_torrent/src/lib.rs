@@ -73,7 +73,7 @@ impl TorrentArgs {
                 let torrent = Client::new(file)?;
                 torrent
                     .sources()
-                    .connect(torrent.info_hash().as_encoded(), torrent.peer_id())
+                    .connect_all(torrent.info_hash().as_encoded(), torrent.peer_id())
                     .await
                     .unwrap();
             }
