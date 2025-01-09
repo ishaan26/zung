@@ -21,7 +21,7 @@ fn arch_source() {
     let sources = arch.sources();
     let sources = sources.http_seeders().expect("This should be some");
 
-    for s in sources {
+    for s in sources.iter() {
         for u in &s.1 {
             assert!(u.contains(arch.meta_info().info().name()))
         }
@@ -38,7 +38,7 @@ fn mit_source() {
 
     let http_sources = sources.http_seeders().expect("This should be some");
 
-    for s in http_sources {
+    for s in http_sources.iter() {
         for u in &s.1 {
             assert!(u.contains(mit.meta_info().info().name()))
         }

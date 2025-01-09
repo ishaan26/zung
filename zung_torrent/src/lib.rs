@@ -73,15 +73,31 @@ impl TorrentArgs {
             TorrentCommands::Test { file } => {
                 let torrent = Client::new(file)?;
 
-                let sources = torrent.sources();
+                let info_hash = torrent.info_hash().as_encoded();
+                let peer_id = torrent.peer_id();
 
-                sources
-                    .connect_all(torrent.info_hash().as_encoded(), torrent.peer_id())
+                torrent.sources().connect_all(info_hash, peer_id).await;
+
+                if let Some(list) = torrent.sources().tracker_list() {
+                    for t in list {
+                        if t.is_connected() {
+                            println!("{} -> {}", t.url().cyan(), t.trys())
+                        }
+                    }
+                }
+
+                println!("{}", "retrying".to_uppercase().blue().bold().underline());
+
+                torrent
+                    .sources()
+                    .retry_connect_all(info_hash, peer_id)
                     .await;
 
-                if let Some(list) = sources.tracker_list() {
+                if let Some(list) = torrent.sources().tracker_list() {
                     for t in list {
-                        println!("{} -> {}", t.url().cyan(), t.is_connected())
+                        if t.is_connected() {
+                            println!("{} -> {}", t.url().cyan(), t.trys())
+                        }
                     }
                 }
             }

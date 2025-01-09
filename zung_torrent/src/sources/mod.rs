@@ -21,7 +21,7 @@ mod trackers;
 use anyhow::Result;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use tokio::{net::UdpSocket, task::JoinHandle};
-use tracing::error;
+use tracing::{error, info};
 
 pub use http_seeders::{HttpSeeder, HttpSeederList};
 pub use trackers::{Action, Event, Tracker, TrackerRequest};
@@ -30,26 +30,24 @@ pub use trackers::{Action, Event, Tracker, TrackerRequest};
 ///
 /// This enum is constructed with the [`sources`](crate::Client::sources) method.
 #[derive(Debug, Clone)]
-pub enum DownloadSources<'a> {
+pub enum DownloadSources {
     /// Genarated if only `announce` or `announce_list` keys are specified in the [`MetaInfo`]
     /// file.
     Trackers { tracker_list: Vec<Tracker> },
 
     /// Genarated if only `url_list` key is specified in the [`MetaInfo`] file.
-    HttpSeeders {
-        http_seeder_list: HttpSeederList<'a>,
-    },
+    HttpSeeders { http_seeder_list: HttpSeederList },
 
     /// Genarated if both `announce` / `announce_list` and `url_list` keys are specified in the
     /// [`MetaInfo`] file.
     Hybrid {
         tracker_list: Vec<Tracker>,
-        http_seeder_list: HttpSeederList<'a>,
+        http_seeder_list: HttpSeederList,
     },
 }
 
-impl<'a> DownloadSources<'a> {
-    pub fn new(meta_info: &'a MetaInfo) -> Self {
+impl DownloadSources {
+    pub fn new(meta_info: &MetaInfo) -> Self {
         fn tracker_list(meta_info: &MetaInfo) -> Vec<Tracker> {
             // As per the torrent specification, if the `announce_list` field is present, the
             // `announce` field is ignored.
@@ -66,14 +64,11 @@ impl<'a> DownloadSources<'a> {
             }
         }
 
-        fn http_seeder_list<'a>(
-            url_list: &'a Vec<String>,
-            meta_info: &'a MetaInfo,
-        ) -> HttpSeederList<'a> {
+        fn http_seeder_list(url_list: &Vec<String>, meta_info: &MetaInfo) -> HttpSeederList {
             let mut list = Vec::with_capacity(url_list.len());
             for url in url_list {
                 if !url.is_empty() {
-                    list.push((url.as_str(), HttpSeeder::new(url, meta_info)));
+                    list.push((url.to_owned(), HttpSeeder::new(url, meta_info)));
                 }
             }
             HttpSeederList::new(list)
@@ -201,6 +196,7 @@ impl<'a> DownloadSources<'a> {
                 .cloned()
                 .map(|tracker| {
                     tokio::spawn(async move {
+                        // TODO: fix this
                         let socket =
                             Arc::new(UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap());
                         tracker.connect(socket, info_hash, peer_id).await
@@ -217,6 +213,38 @@ impl<'a> DownloadSources<'a> {
                     }
                 })
                 .await;
+        }
+    }
+
+    pub async fn retry_connect_all(&self, info_hash: InfoHashEncoded, peer_id: PeerID) {
+        println!("hi");
+        if let Some(list) = self.tracker_list() {
+            for tracker in list {
+                if !tracker.is_connected() {
+                    let tracker = tracker.clone();
+                    tokio::spawn(async move {
+                        let mut i = 0;
+                        loop {
+                            i += 1;
+                            let socket = Arc::new(
+                                UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap(),
+                            );
+
+                            match tracker.connect(socket, info_hash, peer_id).await {
+                                Ok(_) => {
+                                    info!("Connected to : {}", tracker.url());
+                                    break;
+                                }
+                                Err(_) => {
+                                    if i < 10 {
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+            }
         }
     }
 

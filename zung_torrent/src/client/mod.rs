@@ -27,6 +27,7 @@ pub struct Client {
     info_hash: InfoHash,
     peer_id: PeerID,
     num_files: OnceLock<usize>, // Cache no. of files.
+    sources: DownloadSources,
 }
 
 /// Main functions
@@ -79,11 +80,14 @@ impl Client {
                 InfoHash::new(&info)
             });
 
-            let meta_info = Arc::new(
-                meta_info
-                    .join()
-                    .expect("Unable to deserialize the torrent file"),
-            );
+            let meta_info = meta_info
+                .join()
+                .expect("Unable to deserialize the torrent file");
+
+            let sources = DownloadSources::new(&meta_info);
+
+            let meta_info = Arc::new(meta_info);
+
             let info_hash = info.join().expect("Unable to calculate infohash");
 
             Ok(Client {
@@ -92,6 +96,7 @@ impl Client {
                 info_hash,
                 peer_id: PeerID::new(),
                 num_files: OnceLock::new(),
+                sources,
             })
         } else {
             bail!("File not found")
@@ -211,8 +216,8 @@ impl Client {
     /// [`MetaInfo`] type.
     ///
     /// See the type documentation for more information on the usage.
-    pub fn sources(&self) -> DownloadSources {
-        DownloadSources::new(self.meta_info())
+    pub fn sources(&self) -> &DownloadSources {
+        &self.sources
     }
 }
 
@@ -356,7 +361,7 @@ impl Client {
     /// Prints the download sources generated from the [`MetaInfo`] file to stdout.
     pub fn print_download_sources(&self) {
         #[inline]
-        fn print_trackers(tracker_list: Vec<Tracker>) {
+        fn print_trackers(tracker_list: &[Tracker]) {
             print_header("Trackers");
             for (mut i, tracker) in tracker_list.iter().enumerate() {
                 i += 1;
@@ -365,7 +370,7 @@ impl Client {
         }
 
         #[inline]
-        fn print_http_seeders(http_seeder_list: HttpSeederList<'_>) {
+        fn print_http_seeders(http_seeder_list: &HttpSeederList) {
             print_header("HTTP Seeders");
             for (mut i, http) in http_seeder_list.iter().enumerate() {
                 i += 1;
