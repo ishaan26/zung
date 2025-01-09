@@ -10,8 +10,6 @@
 mod request;
 pub use request::*;
 
-mod response;
-
 use zung_parsers::bencode;
 
 use anyhow::{bail, Result};
@@ -26,6 +24,7 @@ use crate::PeerID;
 #[derive(Debug, Clone)]
 pub struct Tracker {
     url: TrackerUrl,
+    request: TrackerRequest,
     response: bencode::Value,
     connected: bool,
     trys: u8,
@@ -35,6 +34,7 @@ impl Tracker {
     pub fn new(url: &str) -> Self {
         Self {
             url: TrackerUrl::new(url),
+            request: TrackerRequest::Empty,
             response: bencode::Value::Integer(0),
             connected: false,
             trys: 0,
@@ -62,8 +62,9 @@ impl Tracker {
         // Make the HTTP or UDP request to recive a TrackerResponse
         let response = request.make_request().await?;
 
-        self.response = response;
         self.connected = true;
+        self.request = request;
+        self.response = response;
         self.trys += 1;
 
         Ok(self)
@@ -150,66 +151,6 @@ impl TrackerUrl {
     }
 }
 
-// #[derive(Debug, Clone)]
-// pub struct TrackerList {
-//     tracker_list: Vec<TrackerUrl>,
-// }
-//
-// impl TrackerList {
-//     pub(crate) fn new(tracker_list: Vec<TrackerUrl>) -> Self {
-//         Self { tracker_list }
-//     }
-//
-//     fn as_array(&self) -> &[TrackerUrl] {
-//         &self.tracker_list
-//     }
-//
-//     /// Consumes the tracker list and returns the internal Vec of [`Tracker`]s.
-//     pub fn into_vec(self) -> Vec<TrackerUrl> {
-//         self.tracker_list
-//     }
-//
-//     /// Asyncly generates the [`TrackerRequest`]
-//     ///
-//     // TODO: Revisit this if there is a faster more efficient way.
-//     pub async fn generate_requests(
-//         &self,
-//         info_hash: InfoHashEncoded,
-//         peer_id: PeerID,
-//     ) -> FuturesUnordered<JoinHandle<Result<TrackerRequest>>> {
-//         let socket = Arc::new(UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap());
-//
-//         self.as_array()
-//             .iter()
-//             .cloned() // The clone here is just Arc::clone
-//             .map(|tracker| {
-//                 let socket = Arc::clone(&socket);
-//                 tokio::spawn(
-//                     async move { tracker.generate_request(socket, info_hash, peer_id).await },
-//                 )
-//             })
-//             .collect()
-//     }
-// }
-//
-// impl Deref for TrackerList {
-//     type Target = [TrackerUrl];
-//
-//     fn deref(&self) -> &Self::Target {
-//         self.as_array()
-//     }
-// }
-//
-// // Iterator implementation
-// impl<'a> IntoIterator for &'a TrackerList {
-//     type Item = &'a TrackerUrl;
-//     type IntoIter = std::slice::Iter<'a, TrackerUrl>;
-//
-//     fn into_iter(self) -> Self::IntoIter {
-//         self.tracker_list.iter()
-//     }
-// }
-
 #[cfg(test)]
 mod tracker_tests {
     use std::net::Ipv4Addr;
@@ -245,6 +186,7 @@ mod tracker_tests {
             TrackerRequest::Udp { .. } => {
                 unreachable!("Why is http being read as upd?")
             }
+            TrackerRequest::Empty => {}
         }
     }
 

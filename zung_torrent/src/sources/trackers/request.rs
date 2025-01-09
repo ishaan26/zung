@@ -17,7 +17,7 @@ pub const UDP_TRANSACTION_ID: i32 = 696969;
 
 pub const REQUEST_TIMEOUT_DURATION: Duration = Duration::from_secs(10);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TrackerRequest {
     Http {
         url: Arc<str>,
@@ -28,6 +28,7 @@ pub enum TrackerRequest {
         connection_id: i64,
         params: UdpTrackerRequestParams,
     },
+    Empty,
 }
 
 impl TrackerRequest {
@@ -69,6 +70,7 @@ impl TrackerRequest {
                 ))
             }
             TrackerRequest::Udp { url, .. } => Ok(url.to_string()),
+            TrackerRequest::Empty => Err(anyhow!("Cannot convert Empty request to url")),
         }
     }
 
@@ -80,6 +82,7 @@ impl TrackerRequest {
             TrackerRequest::Udp { params, .. } => {
                 params.uploaded = uploaded as i64;
             }
+            TrackerRequest::Empty => {}
         }
     }
 
@@ -106,11 +109,12 @@ impl TrackerRequest {
                 warn!(url = self.to_url()?, "UDP connection is to be implemented");
                 Err(anyhow!(""))
             }
+            TrackerRequest::Empty => Err(anyhow!("Making Request on empty string")),
         }
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 /// The parameters used in the client->tracker GET request are as follows:
 pub struct HttpTrackerRequestParams {
     /// The info_hash calculated from the meta_info file provided to the Client.
@@ -189,7 +193,7 @@ pub struct HttpTrackerRequestParams {
 }
 
 /// UID associated with each tracker
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct TrackerID {
     pub(crate) id: String,
 }
@@ -249,7 +253,7 @@ impl HttpTrackerRequestParams {
 /// 92      32-bit    integer    num_want        -1 // default
 /// 96      16-bit    integer    port
 /// 98
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct UdpTrackerRequestParams {
     connection_id: i64,
@@ -267,7 +271,7 @@ pub struct UdpTrackerRequestParams {
     port: u16,
 }
 
-#[derive(Debug, Serialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, PartialEq, Eq, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
 #[repr(i32)]
 pub enum Event {
