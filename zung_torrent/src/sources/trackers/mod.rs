@@ -9,14 +9,17 @@
 
 mod request;
 pub use request::*;
+
+mod response;
+
 use zung_parsers::bencode;
 
+use anyhow::{bail, Result};
 use std::sync::Arc;
+use tokio::net::UdpSocket;
 
 use crate::meta_info::InfoHashEncoded;
 use crate::PeerID;
-use anyhow::{bail, Result};
-use tokio::net::UdpSocket;
 
 // TODO: Need inplace mutation of the tracker type, maybe the following will work??:
 //struct Tracker { inner: Arc<Mutex<TrackerInner>>}

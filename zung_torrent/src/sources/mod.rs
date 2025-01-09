@@ -24,9 +24,9 @@ mod trackers;
 use anyhow::Result;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use tokio::{net::UdpSocket, task::JoinHandle};
+use tracing::{error, info};
 
 pub use http_seeders::{HttpSeeder, HttpSeederList};
-use tracing::{error, info};
 pub use trackers::{Action, Event, Tracker, TrackerRequest};
 
 /// Representing different data sources (trackers and HTTP seeders) for a torrent.
@@ -56,16 +56,16 @@ impl<'a> DownloadSources<'a> {
         fn tracker_list(meta_info: &MetaInfo) -> Vec<Tracker> {
             // As per the torrent specification, if the `announce_list` field is present, the
             // `announce` field is ignored.
-            if let Some(announce_list) = meta_info.announce_list() {
-                announce_list
+            match meta_info.announce_list() {
+                Some(announce_list) => announce_list
                     .par_iter()
                     .flatten()
                     .map(|announce| Tracker::new(announce))
-                    .collect()
-            } else if let Some(announce) = meta_info.announce() {
-                vec![Tracker::new(announce)]
-            } else {
-                unreachable!()
+                    .collect(),
+                None => match meta_info.announce() {
+                    Some(announce) => vec![Tracker::new(announce)],
+                    None => unreachable!(),
+                },
             }
         }
 
@@ -82,27 +82,28 @@ impl<'a> DownloadSources<'a> {
             HttpSeederList::new(list)
         }
 
-        if let Some(url_list) = meta_info.url_list() {
-            if meta_info.announce.is_some() || meta_info.announce_list.is_some() {
-                let http_seeder_list = http_seeder_list(url_list, meta_info);
-                if http_seeder_list.is_empty() {
-                    return Self::Trackers {
+        match meta_info.url_list() {
+            Some(url_list) => {
+                if meta_info.announce.is_some() || meta_info.announce_list.is_some() {
+                    let http_seeder_list = http_seeder_list(url_list, meta_info);
+                    if http_seeder_list.is_empty() {
+                        return Self::Trackers {
+                            tracker_list: tracker_list(meta_info),
+                        };
+                    }
+                    Self::Hybrid {
                         tracker_list: tracker_list(meta_info),
-                    };
-                }
-                Self::Hybrid {
-                    tracker_list: tracker_list(meta_info),
-                    http_seeder_list,
-                }
-            } else {
-                Self::HttpSeeders {
-                    http_seeder_list: http_seeder_list(url_list, meta_info),
+                        http_seeder_list,
+                    }
+                } else {
+                    Self::HttpSeeders {
+                        http_seeder_list: http_seeder_list(url_list, meta_info),
+                    }
                 }
             }
-        } else {
-            Self::Trackers {
+            None => Self::Trackers {
                 tracker_list: tracker_list(meta_info),
-            }
+            },
         }
     }
 
