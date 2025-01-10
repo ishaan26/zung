@@ -20,8 +20,6 @@ use tokio::net::UdpSocket;
 use crate::meta_info::InfoHashEncoded;
 use crate::PeerID;
 
-// TODO: Need inplace mutation of the tracker type, maybe the following will work??:
-//struct Tracker { inner: Arc<Mutex<TrackerInner>>}
 #[derive(Debug)]
 pub struct Tracker {
     url: TrackerUrl,
@@ -175,13 +173,18 @@ impl TrackerUrl {
                     Some(s) => s.0,
                     None => udp_url,
                 };
-                let connection = UdpConnectRequest::new(socket).connect_with(udp_url).await?;
+
+                let connection = UdpConnectRequest::new(Arc::clone(&socket))
+                    .connect_with(udp_url)
+                    .await?;
 
                 let connection_id = connection.connection_id();
+
                 Ok(TrackerRequest::Udp {
-                    url: url.clone(),
+                    url: Arc::clone(url),
                     connection_id,
-                    params: UdpTrackerRequestParams::new(connection_id, info_hash, peer_id),
+                    socket: Arc::clone(&socket),
+                    params: UdpTrackerRequestParams::new(0, info_hash, peer_id),
                 })
             }
             TrackerUrl::Invalid(url) => bail!("Unsupproted : {url}"),

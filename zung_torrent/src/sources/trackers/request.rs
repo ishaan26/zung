@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, bail, Context, Result};
+use bytes::{BufMut, BytesMut};
 use serde::Serialize;
 
 use tokio::net::UdpSocket;
@@ -26,6 +27,7 @@ pub enum TrackerRequest {
     Udp {
         url: Arc<str>,
         connection_id: i64,
+        socket: Arc<UdpSocket>,
         params: UdpTrackerRequestParams,
     },
     Empty,
@@ -88,10 +90,9 @@ impl TrackerRequest {
 
     #[instrument(skip_all, name = "Tracker Request")]
     pub async fn make_request(&self) -> Result<bencode::Value> {
-        let url = self.to_url()?;
-
         match self {
             TrackerRequest::Http { .. } => {
+                let url = self.to_url()?;
                 let request = timeout(REQUEST_TIMEOUT_DURATION, reqwest::get(&url))
                     .await
                     .with_context(|| format!("Connection Timed Out: {url}"))?
@@ -106,9 +107,35 @@ impl TrackerRequest {
 
                 Ok(response)
             }
-            TrackerRequest::Udp { .. } => {
-                // warn!(url = self.to_url()?, "UDP connection is to be implemented");
-                Err(anyhow!(""))
+            TrackerRequest::Udp {
+                socket,
+                params,
+                url,
+                ..
+            } => {
+                let mut response = [0_u8; 2048];
+
+                let request_bytes = params.as_bytes();
+
+                timeout(REQUEST_TIMEOUT_DURATION, socket.send(&request_bytes))
+                    .await
+                    .with_context(|| format!("Send Timed Out: {url}"))?
+                    .context("Sending connect request")?;
+
+                tracing::info!("UDP Tracker Request Sent");
+
+                let rec = timeout(REQUEST_TIMEOUT_DURATION, socket.recv(&mut response))
+                    .await
+                    .with_context(|| format!("Recieve Timed Out: {url}"))?
+                    .context(format!("Failed to recieve any response: {url}"))?;
+
+                tracing::info!("UDP Tracker Response Recieved");
+
+                dbg!(&response[..rec]);
+
+                let response: bencode::Value = bencode::from_bytes(&response)?;
+
+                Ok(response)
             }
             TrackerRequest::Empty => Err(anyhow!("Making Request on empty string")),
         }
@@ -265,11 +292,51 @@ pub struct UdpTrackerRequestParams {
     downloaded: i64,
     left: i64,
     uploaded: i64,
-    event: Event,
+    event: i32,
     ip_address: i32,
     key: i32,
     num_want: i32,
     port: u16,
+}
+
+impl UdpTrackerRequestParams {
+    pub(crate) fn new(connection_id: i64, info_hash: InfoHashEncoded, peer_id: PeerID) -> Self {
+        UdpTrackerRequestParams {
+            connection_id,
+            action: Action::Announce as i32, // 1 -> Announce
+            transaction_id: UDP_TRANSACTION_ID,
+            info_hash,
+            peer_id,
+            downloaded: 0,
+            left: 0, // TODO: update this.
+            uploaded: 0,
+            event: Event::None as i32,
+            ip_address: 0,
+            key: 0,
+            num_want: -1,
+            port: 6886,
+        }
+    }
+
+    fn as_bytes(&self) -> [u8; 98] {
+        let mut bytes = BytesMut::with_capacity(9);
+
+        bytes.put_i64(self.connection_id.to_be());
+        bytes.put_i32(self.action.to_be());
+        bytes.put_i32(self.transaction_id.to_be());
+        bytes.put_slice(self.info_hash.as_ref());
+        bytes.put_slice(self.peer_id.as_bytes().as_ref());
+        bytes.put_i64(self.downloaded.to_be());
+        bytes.put_i64(self.left.to_be());
+        bytes.put_i64(self.uploaded.to_be());
+        bytes.put_i32(self.event);
+        bytes.put_i32(self.ip_address.to_be());
+        bytes.put_i32(self.key.to_be());
+        bytes.put_i32(self.num_want.to_be());
+        bytes.put_u16(self.port.to_be());
+
+        bytes.as_ref().try_into().unwrap()
+    }
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq, Clone, Copy)]
@@ -382,7 +449,7 @@ impl UdpConnectRequest {
         timeout(REQUEST_TIMEOUT_DURATION, socket.recv(&mut response))
             .await
             .with_context(|| format!("Recieve Timed Out: {udp_url}"))?
-            .context("Failed to recieve any response: {udp_url}")?;
+            .context(format!("Failed to recieve any response: {udp_url}"))?;
 
         trace!("Response Recieved");
 
@@ -396,26 +463,6 @@ impl UdpConnectRequest {
             Ok(udp_response)
         } else {
             bail!("Invalid response from udp server")
-        }
-    }
-}
-
-impl UdpTrackerRequestParams {
-    pub(crate) fn new(connection_id: i64, info_hash: InfoHashEncoded, peer_id: PeerID) -> Self {
-        UdpTrackerRequestParams {
-            connection_id,
-            action: Action::Announce as i32, // 1 -> Announce
-            transaction_id: UDP_TRANSACTION_ID,
-            info_hash,
-            peer_id,
-            downloaded: 0,
-            left: 0, // TODO: update this.
-            uploaded: 0,
-            event: Event::None,
-            ip_address: 0,
-            key: 0,
-            num_want: -1,
-            port: 6886,
         }
     }
 }

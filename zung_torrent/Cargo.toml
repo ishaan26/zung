@@ -15,7 +15,7 @@ client = ["dep:colored", "dep:human_bytes"]
 
 [dependencies]
 
-colored = { version = "2.2.0", optional = true }
+colored = { version = "3.0.0", optional = true }
 anyhow = "1.0.94"
 bytes = { version = "1.9.0", features = ["serde"] }
 clap = { version = "4.5.23", features = ["derive"] }
