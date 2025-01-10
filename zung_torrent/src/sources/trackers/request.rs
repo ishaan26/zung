@@ -6,7 +6,7 @@ use serde::Serialize;
 
 use tokio::net::UdpSocket;
 use tokio::time::timeout;
-use tracing::{instrument, trace, warn};
+use tracing::{instrument, trace};
 use zung_parsers::bencode;
 
 use crate::meta_info::InfoHashEncoded;
@@ -88,9 +88,10 @@ impl TrackerRequest {
 
     #[instrument(skip_all, name = "Tracker Request")]
     pub async fn make_request(&self) -> Result<bencode::Value> {
+        let url = self.to_url()?;
+
         match self {
             TrackerRequest::Http { .. } => {
-                let url = self.to_url()?;
                 let request = timeout(REQUEST_TIMEOUT_DURATION, reqwest::get(&url))
                     .await
                     .with_context(|| format!("Connection Timed Out: {url}"))?
@@ -106,7 +107,7 @@ impl TrackerRequest {
                 Ok(response)
             }
             TrackerRequest::Udp { .. } => {
-                warn!(url = self.to_url()?, "UDP connection is to be implemented");
+                // warn!(url = self.to_url()?, "UDP connection is to be implemented");
                 Err(anyhow!(""))
             }
             TrackerRequest::Empty => Err(anyhow!("Making Request on empty string")),

@@ -70,9 +70,8 @@ impl Tracker {
         info_hash: InfoHashEncoded,
         peer_id: PeerID,
     ) -> Result<()> {
-        // Generate Tracker request.
-        // - Http => Generates a url.
-        // - UDP => Sends a UDP connect request
+        self.inner.trys.fetch_add(1, Ordering::SeqCst);
+
         let request = self
             .url
             .generate_request(socket, info_hash, peer_id)
@@ -82,7 +81,6 @@ impl Tracker {
         let response = request.make_request().await?;
 
         self.inner.connected.store(true, Ordering::Relaxed);
-        self.inner.trys.fetch_add(1, Ordering::SeqCst);
 
         self.set_request(request)?;
         self.set_response(response)?;

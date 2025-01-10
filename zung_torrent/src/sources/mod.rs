@@ -217,12 +217,12 @@ impl DownloadSources {
     }
 
     pub async fn retry_connect_all(&self, info_hash: InfoHashEncoded, peer_id: PeerID) {
-        println!("hi");
         if let Some(list) = self.tracker_list() {
+            let mut handles = Vec::new();
             for tracker in list {
                 if !tracker.is_connected() {
                     let tracker = tracker.clone();
-                    tokio::spawn(async move {
+                    let handle = tokio::spawn(async move {
                         let mut i = 0;
                         loop {
                             i += 1;
@@ -238,13 +238,23 @@ impl DownloadSources {
                                 Err(_) => {
                                     if i < 10 {
                                         continue;
+                                    } else {
+                                        break;
                                     }
                                 }
                             }
                         }
                     });
+
+                    handles.push(handle);
                 }
             }
+
+            tokio::spawn(async {
+                futures::future::join_all(handles).await;
+            })
+            .await
+            .unwrap();
         }
     }
 
