@@ -20,8 +20,8 @@ zung_torrent = { version = "0.1.0", path = "./zung_torrent" }
 
 anyhow = "1.0.95"
 anstyle = "1.0.10"
-clap = { version = "4.5.23", features = ["derive"] }
-tokio = { version = "1.42.0", features = ["macros", "rt-multi-thread"] }
+clap = { version = "4.5.26", features = ["derive"] }
+tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 tracing = { version = "0.1.41", features = ["release_max_level_info"] }
 
