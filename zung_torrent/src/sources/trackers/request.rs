@@ -11,7 +11,10 @@ use tracing::{instrument, trace};
 use zung_parsers::bencode;
 
 use crate::meta_info::InfoHashEncoded;
+use crate::sources::trackers::{HttpTrackerResponse, UdpTrackerResponse};
 use crate::PeerID;
+
+use super::TrackerReponse;
 
 pub const UDP_PROTOCOL_ID: i64 = 0x41727101980;
 pub const UDP_TRANSACTION_ID: i32 = 696969;
@@ -88,9 +91,11 @@ impl TrackerRequest {
         }
     }
 
+    /// Makes the Tracker request and retunrs the Tracker Response.
     #[instrument(skip_all, name = "Tracker Request")]
-    pub async fn make_request(&self) -> Result<bencode::Value> {
+    pub async fn make_request(&self) -> Result<TrackerReponse> {
         match self {
+            // HTTP request wherein response is recieved as a bencode dictionary.
             TrackerRequest::Http { .. } => {
                 let url = self.to_url()?;
                 let request = timeout(REQUEST_TIMEOUT_DURATION, reqwest::get(&url))
@@ -101,19 +106,21 @@ impl TrackerRequest {
                 trace!(url, "Request made successfully");
 
                 let response = request.bytes().await?;
-                let response: bencode::Value = bencode::from_bytes(&response)?;
+                let response: HttpTrackerResponse = bencode::from_bytes(&response)?;
 
-                trace!(url, response = response.to_string(), "Received response");
+                trace!(url, "Received response");
 
-                Ok(response)
+                Ok(TrackerReponse::Http(response))
             }
+
+            // UDP Request wherein response is recieved as binary data.
             TrackerRequest::Udp {
                 socket,
                 params,
                 url,
                 ..
             } => {
-                let mut response = [0_u8; 2048];
+                let mut response = Vec::with_capacity(4096);
 
                 let request_bytes = params.as_bytes();
 
@@ -122,20 +129,30 @@ impl TrackerRequest {
                     .with_context(|| format!("Send Timed Out: {url}"))?
                     .context("Sending connect request")?;
 
-                tracing::info!("UDP Tracker Request Sent");
+                trace!("UDP Tracker Request Sent");
 
-                let rec = timeout(REQUEST_TIMEOUT_DURATION, socket.recv(&mut response))
+                let rec = timeout(REQUEST_TIMEOUT_DURATION, socket.recv_buf(&mut response))
                     .await
                     .with_context(|| format!("Recieve Timed Out: {url}"))?
                     .context(format!("Failed to recieve any response: {url}"))?;
 
-                tracing::info!("UDP Tracker Response Recieved");
+                if rec < 20 {
+                    bail!("Invalid or No response recieved: {url}")
+                }
 
-                dbg!(&response[..rec]);
+                trace!("UDP Tracker Response Recieved");
 
-                let response: bencode::Value = bencode::from_bytes(&response)?;
+                let response = UdpTrackerResponse::from_bytes(&response[..rec])?;
 
-                Ok(response)
+                if response.is_error() {
+                    bail!("Server returned an Announce Error: {url}")
+                }
+
+                if response.transaction_id() != UDP_TRANSACTION_ID {
+                    bail!("Invalid Transaction ID recieved: {url}")
+                }
+
+                Ok(TrackerReponse::Udp(response))
             }
             TrackerRequest::Empty => Err(anyhow!("Making Request on empty string")),
         }
@@ -296,7 +313,7 @@ pub struct UdpTrackerRequestParams {
     ip_address: i32,
     key: i32,
     num_want: i32,
-    port: u16,
+    port: i16,
 }
 
 impl UdpTrackerRequestParams {
@@ -312,30 +329,33 @@ impl UdpTrackerRequestParams {
             uploaded: 0,
             event: Event::None as i32,
             ip_address: 0,
-            key: 0,
             num_want: -1,
+            key: 0,
             port: 6886,
         }
     }
 
     fn as_bytes(&self) -> [u8; 98] {
-        let mut bytes = BytesMut::with_capacity(9);
+        let mut bytes = BytesMut::with_capacity(98);
 
-        bytes.put_i64(self.connection_id.to_be());
-        bytes.put_i32(self.action.to_be());
-        bytes.put_i32(self.transaction_id.to_be());
+        bytes.put_slice(&self.connection_id.to_be_bytes());
+        bytes.put_slice(&self.action.to_be_bytes());
+        bytes.put_slice(&self.transaction_id.to_be_bytes());
         bytes.put_slice(self.info_hash.as_ref());
         bytes.put_slice(self.peer_id.as_bytes().as_ref());
-        bytes.put_i64(self.downloaded.to_be());
-        bytes.put_i64(self.left.to_be());
-        bytes.put_i64(self.uploaded.to_be());
-        bytes.put_i32(self.event);
-        bytes.put_i32(self.ip_address.to_be());
-        bytes.put_i32(self.key.to_be());
-        bytes.put_i32(self.num_want.to_be());
-        bytes.put_u16(self.port.to_be());
+        bytes.put_slice(&self.downloaded.to_be_bytes());
+        bytes.put_slice(&self.left.to_be_bytes());
+        bytes.put_slice(&self.uploaded.to_be_bytes());
+        bytes.put_slice(&self.event.to_be_bytes());
+        bytes.put_slice(&self.ip_address.to_be_bytes());
+        bytes.put_slice(&self.key.to_be_bytes());
+        bytes.put_slice(&self.num_want.to_be_bytes());
+        bytes.put_slice(&self.port.to_be_bytes());
 
-        bytes.as_ref().try_into().unwrap()
+        bytes
+            .as_ref()
+            .try_into()
+            .expect("Faliure in converting bytes")
     }
 }
 
@@ -416,13 +436,16 @@ impl UdpConnectRequest {
     }
 
     pub(crate) fn as_bytes(&self) -> [u8; 16] {
-        let mut bytes = [0_u8; 16];
+        let mut bytes = BytesMut::with_capacity(16);
 
-        bytes[0..8].copy_from_slice(&self.protocol_id.to_be_bytes());
-        bytes[8..12].copy_from_slice(&(self.action as i32).to_be_bytes());
-        bytes[12..16].copy_from_slice(&self.transaction_id.to_be_bytes());
+        bytes.put_slice(&self.protocol_id.to_be_bytes());
+        bytes.put_slice(&(self.action as i32).to_be_bytes());
+        bytes.put_slice(&self.transaction_id.to_be_bytes());
 
         bytes
+            .as_ref()
+            .try_into()
+            .expect("Faliure in converting Bytes")
     }
 
     #[instrument(name = "udp_connect_request", skip(self))]

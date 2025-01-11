@@ -88,16 +88,18 @@ impl TorrentArgs {
 
                 println!("{}", "retrying".to_uppercase().blue().bold().underline());
 
-                // torrent
-                //     .sources()
-                //     .retry_connect_all(info_hash, peer_id)
-                //     .await;
-                //
-                // if let Some(list) = torrent.sources().tracker_list() {
-                //     for t in list {
-                //         println!("{} -> {}", t.trys(), t.url().cyan());
-                //     }
-                // }
+                torrent
+                    .sources()
+                    .retry_connect_all(info_hash, peer_id)
+                    .await;
+
+                if let Some(list) = torrent.sources().tracker_list() {
+                    for t in list {
+                        if t.is_connected() {
+                            println!("{} -> {}", t.trys(), t.url().cyan());
+                        }
+                    }
+                }
             }
         }
 

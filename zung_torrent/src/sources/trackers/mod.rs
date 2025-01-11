@@ -10,7 +10,8 @@
 mod request;
 pub use request::*;
 
-use zung_parsers::bencode;
+mod response;
+pub use response::*;
 
 use anyhow::{anyhow, bail, Result};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -29,7 +30,7 @@ pub struct Tracker {
 #[derive(Debug)]
 struct TrackerInner {
     request: Mutex<TrackerRequest>,
-    response: Mutex<bencode::Value>,
+    response: Mutex<TrackerReponse>,
     connected: AtomicBool,
     trys: AtomicU32,
 }
@@ -47,7 +48,7 @@ impl Tracker {
     pub fn new(url: &str) -> Self {
         let inner = TrackerInner {
             request: Mutex::new(TrackerRequest::Empty),
-            response: Mutex::new(bencode::Value::Integer(0)),
+            response: Mutex::new(TrackerReponse::Empty),
             connected: AtomicBool::new(false),
             trys: AtomicU32::new(0),
         };
@@ -106,7 +107,7 @@ impl Tracker {
         Ok(())
     }
 
-    pub(crate) fn set_response(&self, response: bencode::Value) -> Result<()> {
+    pub(crate) fn set_response(&self, response: TrackerReponse) -> Result<()> {
         let mut guard = self
             .inner
             .response
@@ -184,7 +185,7 @@ impl TrackerUrl {
                     url: Arc::clone(url),
                     connection_id,
                     socket: Arc::clone(&socket),
-                    params: UdpTrackerRequestParams::new(0, info_hash, peer_id),
+                    params: UdpTrackerRequestParams::new(connection_id, info_hash, peer_id),
                 })
             }
             TrackerUrl::Invalid(url) => bail!("Unsupproted : {url}"),
