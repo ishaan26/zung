@@ -16,7 +16,7 @@ use crate::PeerID;
 
 use super::TrackerReponse;
 
-pub const UDP_PROTOCOL_ID: i64 = 0x41727101980;
+pub const UDP_PROTOCOL_ID: i64 = 0x41727101980; // Magic torrent number. DNC!
 pub const UDP_TRANSACTION_ID: i32 = 696969;
 
 pub const REQUEST_TIMEOUT_DURATION: Duration = Duration::from_secs(10);
@@ -106,6 +106,10 @@ impl TrackerRequest {
                 trace!(url, "Request made successfully");
 
                 let response = request.bytes().await?;
+
+                // let response_ohter: bencode::Value = bencode::from_bytes(&response)?;
+                // println!("{response_ohter}");
+
                 let response: HttpTrackerResponse = bencode::from_bytes(&response)?;
 
                 trace!(url, "Received response");
@@ -122,7 +126,7 @@ impl TrackerRequest {
             } => {
                 let mut response = Vec::with_capacity(4096);
 
-                let request_bytes = params.as_bytes();
+                let request_bytes = params.to_bytes();
 
                 timeout(REQUEST_TIMEOUT_DURATION, socket.send(&request_bytes))
                     .await
@@ -131,10 +135,13 @@ impl TrackerRequest {
 
                 trace!("UDP Tracker Request Sent");
 
-                let rec = timeout(REQUEST_TIMEOUT_DURATION, socket.recv_buf(&mut response))
-                    .await
-                    .with_context(|| format!("Recieve Timed Out: {url}"))?
-                    .context(format!("Failed to recieve any response: {url}"))?;
+                let (rec, socket) = timeout(
+                    REQUEST_TIMEOUT_DURATION,
+                    socket.recv_buf_from(&mut response),
+                )
+                .await
+                .with_context(|| format!("Recieve Timed Out: {url}"))?
+                .context(format!("Failed to recieve any response: {url}"))?;
 
                 if rec < 20 {
                     bail!("Invalid or No response recieved: {url}")
@@ -142,7 +149,7 @@ impl TrackerRequest {
 
                 trace!("UDP Tracker Response Recieved");
 
-                let response = UdpTrackerResponse::from_bytes(&response[..rec])?;
+                let response = UdpTrackerResponse::from_bytes(&response[..rec], socket)?;
 
                 if response.is_error() {
                     bail!("Server returned an Announce Error: {url}")
@@ -335,7 +342,7 @@ impl UdpTrackerRequestParams {
         }
     }
 
-    fn as_bytes(&self) -> [u8; 98] {
+    fn to_bytes(self) -> [u8; 98] {
         let mut bytes = BytesMut::with_capacity(98);
 
         bytes.put_slice(&self.connection_id.to_be_bytes());
