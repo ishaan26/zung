@@ -5,26 +5,27 @@
 //! sources from metadata, allowing a torrent client to efficiently pull data from either or both
 //! types of sources based on the information contained in the [`MetaInfo`] file.
 
-use std::{net::Ipv4Addr, sync::Arc};
+pub mod http_seeders;
+pub mod peers;
+pub mod trackers;
 
-use crate::{
-    meta_info::{InfoHashEncoded, MetaInfo},
-    PeerID,
+use std::{
+    collections::HashSet,
+    net::{Ipv4Addr, SocketAddr},
+    sync::Arc,
 };
 
 use colored::Colorize;
 use futures::{stream::FuturesUnordered, StreamExt};
-
-mod http_seeders;
-mod trackers;
 
 use anyhow::Result;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use tokio::{net::UdpSocket, task::JoinHandle};
 use tracing::{error, info};
 
-pub use http_seeders::{HttpSeeder, HttpSeederList};
-pub use trackers::{Action, Event, Tracker, TrackerRequest};
+use crate::meta_info::{InfoHashEncoded, MetaInfo};
+use http_seeders::{HttpSeeder, HttpSeederList};
+use trackers::Tracker;
 
 /// Representing different data sources (trackers and HTTP seeders) for a torrent.
 ///
@@ -47,22 +48,18 @@ pub enum DownloadSources {
 }
 
 impl DownloadSources {
-    pub fn new(meta_info: &MetaInfo) -> Self {
-        fn tracker_list(meta_info: &MetaInfo) -> Vec<Tracker> {
-            // As per the torrent specification, if the `announce_list` field is present, the
-            // `announce` field is ignored.
-            match meta_info.announce_list() {
-                Some(announce_list) => announce_list
-                    .par_iter()
-                    .flatten()
-                    .map(|announce| Tracker::new(announce))
-                    .collect(),
-                None => match meta_info.announce() {
-                    Some(announce) => vec![Tracker::new(announce)],
-                    None => unreachable!(),
-                },
-            }
-        }
+    pub fn new(meta_info: &MetaInfo, info_hash: InfoHashEncoded) -> Self {
+        let tracker_list = match meta_info.announce_list() {
+            Some(announce_list) => announce_list
+                .par_iter()
+                .flatten()
+                .map(|announce| Tracker::new(announce, info_hash))
+                .collect(),
+            None => match meta_info.announce() {
+                Some(announce) => vec![Tracker::new(announce, info_hash)],
+                None => unreachable!(),
+            },
+        };
 
         fn http_seeder_list(url_list: &Vec<String>, meta_info: &MetaInfo) -> HttpSeederList {
             let mut list = Vec::with_capacity(url_list.len());
@@ -79,12 +76,10 @@ impl DownloadSources {
                 if meta_info.announce.is_some() || meta_info.announce_list.is_some() {
                     let http_seeder_list = http_seeder_list(url_list, meta_info);
                     if http_seeder_list.is_empty() {
-                        return Self::Trackers {
-                            tracker_list: tracker_list(meta_info),
-                        };
+                        return Self::Trackers { tracker_list };
                     }
                     Self::Hybrid {
-                        tracker_list: tracker_list(meta_info),
+                        tracker_list,
                         http_seeder_list,
                     }
                 } else {
@@ -93,9 +88,7 @@ impl DownloadSources {
                     }
                 }
             }
-            None => Self::Trackers {
-                tracker_list: tracker_list(meta_info),
-            },
+            None => Self::Trackers { tracker_list },
         }
     }
 
@@ -189,7 +182,7 @@ impl DownloadSources {
         matches!(self, Self::Hybrid { .. })
     }
 
-    pub async fn connect_all(&self, info_hash: InfoHashEncoded, peer_id: PeerID) {
+    pub async fn connect_all(&self) {
         if let Some(list) = self.tracker_list() {
             let futures: FuturesUnordered<JoinHandle<Result<()>>> = list
                 .iter()
@@ -199,7 +192,7 @@ impl DownloadSources {
                         // TODO: fix this
                         let socket =
                             Arc::new(UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap());
-                        tracker.connect(socket, info_hash, peer_id).await
+                        tracker.connect(socket).await
                     })
                 })
                 .collect();
@@ -216,7 +209,7 @@ impl DownloadSources {
         }
     }
 
-    pub async fn retry_connect_all(&self, info_hash: InfoHashEncoded, peer_id: PeerID) {
+    pub async fn retry_connect_all(&self) {
         if let Some(list) = self.tracker_list() {
             let mut handles = Vec::new();
             for tracker in list {
@@ -230,7 +223,7 @@ impl DownloadSources {
                                 UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap(),
                             );
 
-                            match tracker.connect(socket, info_hash, peer_id).await {
+                            match tracker.connect(socket).await {
                                 Ok(_) => {
                                     info!("Connected to : {}", tracker.url());
                                     break;
@@ -258,46 +251,30 @@ impl DownloadSources {
         }
     }
 
-    // pub async fn connect_all(
-    //     &self,
-    //     info_hash: InfoHashEncoded,
-    //     peer_id: PeerID,
-    // ) -> Option<Vec<Tracker>> {
-    //     if let Some(list) = self.tracker_list() {
-    //         let futures: FuturesUnordered<JoinHandle<Result<Tracker>>> = list
-    //             .iter()
-    //             .cloned()
-    //             .map(|tracker| {
-    //                 tokio::spawn(async move {
-    //                     let socket =
-    //                         Arc::new(UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap());
-    //                     tracker.connect(socket, info_hash, peer_id).await
-    //                 })
-    //             })
-    //             .collect();
-    //
-    //         let result = Arc::new(Mutex::new(Vec::with_capacity(list.len())));
-    //
-    //         futures
-    //             .for_each_concurrent(None, |connection| {
-    //                 let result = Arc::clone(&result);
-    //                 async move {
-    //                     match connection {
-    //                         Ok(Ok(value)) => {
-    //                             info!("Connected with {}", value.url());
-    //                             result.lock().expect("thread failed").push(value);
-    //                         }
-    //                         Ok(Err(e)) => error!("{}", e.to_string().red()),
-    //                         Err(e) => error!("{}", e.to_string().red()),
-    //                     }
-    //                 }
-    //             })
-    //             .await;
-    //
-    //         let vec = Arc::try_unwrap(result).unwrap().into_inner().unwrap();
-    //         return Some(vec);
-    //     }
-    //
-    //     None
-    // }
+    pub fn peers_list(&self) -> HashSet<SocketAddr> {
+        match self {
+            DownloadSources::Trackers { tracker_list }
+            | DownloadSources::Hybrid { tracker_list, .. } => {
+                let mut list = HashSet::new();
+
+                for tracker in tracker_list {
+                    let response = tracker.get_response().unwrap();
+                    if let Some(peers) = response.get_peers() {
+                        let (v4, v6) = peers.get_addrs();
+
+                        for addr in v4 {
+                            list.insert(SocketAddr::V4(addr));
+                        }
+
+                        for addr in v6 {
+                            list.insert(SocketAddr::V6(addr));
+                        }
+                    }
+                }
+
+                list
+            }
+            DownloadSources::HttpSeeders { .. } => HashSet::new(),
+        }
+    }
 }

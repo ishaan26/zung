@@ -10,39 +10,89 @@ use tokio::time::timeout;
 use tracing::{instrument, trace};
 use zung_parsers::bencode;
 
+use crate::client::PEER_ID;
 use crate::meta_info::InfoHashEncoded;
-use crate::sources::trackers::{HttpTrackerResponse, UdpTrackerResponse};
+use crate::sources::trackers::{HttpTrackerResponse, TrackerResponseState, UdpTrackerResponse};
 use crate::PeerID;
 
-use super::TrackerReponse;
+use super::TrackerResponse;
 
 pub const UDP_PROTOCOL_ID: i64 = 0x41727101980; // Magic torrent number. DNC!
 pub const UDP_TRANSACTION_ID: i32 = 696969;
+const MIN_UDP_RESPONSE_SIZE: usize = 20;
 
 pub const REQUEST_TIMEOUT_DURATION: Duration = Duration::from_secs(10);
 
-#[derive(Debug, Clone)]
-pub enum TrackerRequest {
+/// Represents different types of BitTorrent tracker requests.
+///
+/// This enum encapsulates the various types of requests that can be made to BitTorrent trackers,
+/// supporting both HTTP and UDP protocols, as well as an empty state.
+///
+/// # Variants
+///
+/// * `Http` - Represents an HTTP tracker request with a URL and associated parameters
+/// * `Udp` - Represents a UDP tracker request with connection details and parameters
+/// * `Empty` - Represents an empty or uninitialized tracker request state
+///
+///# Notes
+///
+/// - The `url` fields are stored as `Arc<str>` for efficient sharing and minimal memory overhead
+/// - UDP requests maintain their own socket connection through `Arc<UdpSocket>`
+/// - The `Empty` variant can be used as a placeholder or to represent an invalid state
+///
+
+#[derive(Debug)]
+pub struct TrackerRequest {
+    pub(crate) state: TrackerRequestState,
+}
+
+#[derive(Debug)]
+pub(crate) enum TrackerRequestState {
+    /// HTTP tracker request variant.
+    /// Contains the tracker's URL and request parameters.
     Http {
+        /// The announce URL of the HTTP tracker.
         url: Arc<str>,
+
         params: HttpTrackerRequestParams,
     },
+
+    /// UDP tracker request variant.
+    /// Contains connection details and request parameters for UDP trackers.
     Udp {
+        /// The announce URL of the UDP tracker.
         url: Arc<str>,
+
+        /// Connection ID received from the UDP tracker during connection phase using
+        /// [UdpConnectRequest]
         connection_id: i64,
+
+        /// Shared UDP socket for communication with the tracker
         socket: Arc<UdpSocket>,
+
+        /// UDP-specific parameters for the tracker request based on the (torrent
+        /// spec)[https://www.bittorrent.org/beps/bep_0015.html]
         params: UdpTrackerRequestParams,
     },
+
+    /// Represents an empty or uninitialized tracker request.
+    /// Can be used as a placeholder or to represent an invalid state.
     Empty,
 }
 
 impl TrackerRequest {
+    pub fn empty() -> Self {
+        Self {
+            state: TrackerRequestState::Empty,
+        }
+    }
+
     /// Returns `true` if the tracker request is [`Http`].
     ///
     /// [`Http`]: TrackerRequest::Http
     #[must_use]
     pub fn is_http(&self) -> bool {
-        matches!(self, Self::Http { .. })
+        matches!(self.state, TrackerRequestState::Http { .. })
     }
 
     /// Returns `true` if the tracker request is [`Udp`].
@@ -50,12 +100,13 @@ impl TrackerRequest {
     /// [`Udp`]: TrackerRequest::Udp
     #[must_use]
     pub fn is_udp(&self) -> bool {
-        matches!(self, Self::Udp { .. })
+        matches!(self.state, TrackerRequestState::Udp { .. })
     }
 
+    /// Returns the `connection_id` (if) recieved from a UDP tracker.
     pub fn connection_id(&self) -> Option<i64> {
-        if let Self::Udp { connection_id, .. } = self {
-            Some(*connection_id)
+        if let TrackerRequestState::Udp { connection_id, .. } = self.state {
+            Some(connection_id)
         } else {
             None
         }
@@ -63,8 +114,8 @@ impl TrackerRequest {
 
     /// Convert to url string for making a get request.
     pub fn to_url(&self) -> Result<String> {
-        match self {
-            TrackerRequest::Http { url, params } => {
+        match &self.state {
+            TrackerRequestState::Http { url, params } => {
                 let announce = url;
                 let info_hash = params.info_hash.to_url_encoded();
                 let peer_id = params.peer_id.to_url_encoded();
@@ -74,29 +125,29 @@ impl TrackerRequest {
                     "{announce}?info_hash={info_hash}&peer_id={peer_id}&{params}"
                 ))
             }
-            TrackerRequest::Udp { url, .. } => Ok(url.to_string()),
-            TrackerRequest::Empty => Err(anyhow!("Cannot convert Empty request to url")),
+            TrackerRequestState::Udp { url, .. } => Ok(url.to_string()),
+            TrackerRequestState::Empty => Err(anyhow!("Cannot convert Empty request to url")),
         }
     }
 
     pub fn set_uploaded(&mut self, uploaded: usize) {
-        match self {
-            TrackerRequest::Http { params, .. } => {
+        match &mut self.state {
+            TrackerRequestState::Http { params, .. } => {
                 params.uploaded = uploaded;
             }
-            TrackerRequest::Udp { params, .. } => {
+            TrackerRequestState::Udp { params, .. } => {
                 params.uploaded = uploaded as i64;
             }
-            TrackerRequest::Empty => {}
+            TrackerRequestState::Empty => {}
         }
     }
 
     /// Makes the Tracker request and retunrs the Tracker Response.
     #[instrument(skip_all, name = "Tracker Request")]
-    pub async fn make_request(&self) -> Result<TrackerReponse> {
-        match self {
+    pub async fn make_request(&self) -> Result<TrackerResponse> {
+        match &self.state {
             // HTTP request wherein response is recieved as a bencode dictionary.
-            TrackerRequest::Http { .. } => {
+            TrackerRequestState::Http { .. } => {
                 let url = self.to_url()?;
                 let request = timeout(REQUEST_TIMEOUT_DURATION, reqwest::get(&url))
                     .await
@@ -114,11 +165,13 @@ impl TrackerRequest {
 
                 trace!(url, "Received response");
 
-                Ok(TrackerReponse::Http(response))
+                Ok(TrackerResponse {
+                    state: TrackerResponseState::Http(response),
+                })
             }
 
             // UDP Request wherein response is recieved as binary data.
-            TrackerRequest::Udp {
+            TrackerRequestState::Udp {
                 socket,
                 params,
                 url,
@@ -143,7 +196,7 @@ impl TrackerRequest {
                 .with_context(|| format!("Recieve Timed Out: {url}"))?
                 .context(format!("Failed to recieve any response: {url}"))?;
 
-                if rec < 20 {
+                if rec < MIN_UDP_RESPONSE_SIZE {
                     bail!("Invalid or No response recieved: {url}")
                 }
 
@@ -159,22 +212,25 @@ impl TrackerRequest {
                     bail!("Invalid Transaction ID recieved: {url}")
                 }
 
-                Ok(TrackerReponse::Udp(response))
+                Ok(TrackerResponse {
+                    state: TrackerResponseState::Udp(response),
+                })
             }
-            TrackerRequest::Empty => Err(anyhow!("Making Request on empty string")),
+            TrackerRequestState::Empty => Err(anyhow!("Making Request on empty string")),
         }
     }
 }
 
+/// HTTP-specific parameters for the tracker request based on the (torrent
+/// spec)[https://wiki.theory.org/BitTorrentSpecification#Tracker_Request_Parameters]
 #[derive(Debug, Serialize, Clone)]
-/// The parameters used in the client->tracker GET request are as follows:
 pub struct HttpTrackerRequestParams {
     /// The info_hash calculated from the meta_info file provided to the Client.
-    #[serde(skip)]
+    #[serde(skip)] // NOTE: becuause serde_urlencoded doesnot correctly serialize.
     pub(crate) info_hash: InfoHashEncoded,
 
     /// PeerID of the Client.
-    #[serde(skip)]
+    #[serde(skip)] // NOTE: becuause serde_urlencoded doesnot correctly serialize.
     pub(crate) peer_id: PeerID,
 
     /// The port number that the client is listening on. Ports reserved for BitTorrent are typically
@@ -270,10 +326,10 @@ where
 }
 
 impl HttpTrackerRequestParams {
-    pub(crate) fn new(info_hash: InfoHashEncoded, peer_id: PeerID) -> Self {
+    pub(crate) fn new(info_hash: InfoHashEncoded) -> Self {
         HttpTrackerRequestParams {
             info_hash,
-            peer_id,
+            peer_id: *PEER_ID,
             // TODO:: Listen on ports 6881 to 6889
             port: 6881,
             uploaded: 0,
@@ -324,13 +380,13 @@ pub struct UdpTrackerRequestParams {
 }
 
 impl UdpTrackerRequestParams {
-    pub(crate) fn new(connection_id: i64, info_hash: InfoHashEncoded, peer_id: PeerID) -> Self {
+    pub(crate) fn new(connection_id: i64, info_hash: InfoHashEncoded) -> Self {
         UdpTrackerRequestParams {
             connection_id,
             action: Action::Announce as i32, // 1 -> Announce
             transaction_id: UDP_TRANSACTION_ID,
             info_hash,
-            peer_id,
+            peer_id: *PEER_ID,
             downloaded: 0,
             left: 0, // TODO: update this.
             uploaded: 0,

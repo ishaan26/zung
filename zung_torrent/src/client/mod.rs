@@ -9,15 +9,17 @@ use zung_parsers::bencode;
 use std::{
     fmt::Display,
     path::Path,
-    sync::{Arc, OnceLock},
+    sync::{Arc, LazyLock, OnceLock},
     thread,
 };
 
 use crate::{
     meta_info::{FileTree, InfoHash, SortOrd},
-    sources::{DownloadSources, HttpSeederList, Tracker},
+    sources::{http_seeders::HttpSeederList, trackers::Tracker, DownloadSources},
     MetaInfo,
 };
+
+pub static PEER_ID: LazyLock<PeerID> = LazyLock::new(PeerID::new);
 
 /// A torrent client providing the methods to interact with a torrent file.
 #[derive(Debug)]
@@ -84,17 +86,17 @@ impl Client {
                 .join()
                 .expect("Unable to deserialize the torrent file");
 
-            let sources = DownloadSources::new(&meta_info);
-
             let meta_info = Arc::new(meta_info);
 
             let info_hash = info.join().expect("Unable to calculate infohash");
+
+            let sources = DownloadSources::new(&meta_info, info_hash.as_encoded());
 
             Ok(Client {
                 meta_info,
                 file_name,
                 info_hash,
-                peer_id: PeerID::new(),
+                peer_id: *PEER_ID,
                 num_files: OnceLock::new(),
                 sources,
             })

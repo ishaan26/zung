@@ -15,22 +15,22 @@ pub use response::*;
 
 use anyhow::{anyhow, bail, Result};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use tokio::net::UdpSocket;
 
 use crate::meta_info::InfoHashEncoded;
-use crate::PeerID;
 
 #[derive(Debug)]
 pub struct Tracker {
     url: TrackerUrl,
+    info_hash: InfoHashEncoded,
     inner: Arc<TrackerInner>,
 }
 
 #[derive(Debug)]
 struct TrackerInner {
     request: Mutex<TrackerRequest>,
-    response: Mutex<TrackerReponse>,
+    response: Mutex<TrackerResponse>,
     connected: AtomicBool,
     trys: AtomicU32,
 }
@@ -39,42 +39,67 @@ impl Clone for Tracker {
     fn clone(&self) -> Self {
         Self {
             url: self.url.clone(),
+            info_hash: self.info_hash,
             inner: Arc::clone(&self.inner),
         }
     }
 }
 
 impl Tracker {
-    pub fn new(url: &str) -> Self {
+    pub fn new(url: &str, info_hash: InfoHashEncoded) -> Self {
         let inner = TrackerInner {
-            request: Mutex::new(TrackerRequest::Empty),
-            response: Mutex::new(TrackerReponse::Empty),
+            request: Mutex::new(TrackerRequest::empty()),
+            response: Mutex::new(TrackerResponse::empty()),
             connected: AtomicBool::new(false),
             trys: AtomicU32::new(0),
         };
 
         Self {
             url: TrackerUrl::new(url),
+            info_hash,
             inner: Arc::new(inner),
         }
     }
 
-    pub fn url(&self) -> &str {
-        self.url.url()
+    /// Constructs the [`TrackerRequest`].
+    pub async fn tracker_request(&self, socket: Arc<UdpSocket>) -> Result<TrackerRequest> {
+        match &self.url {
+            TrackerUrl::Http(url) => Ok(TrackerRequest {
+                state: TrackerRequestState::Http {
+                    url: url.clone(),
+                    params: HttpTrackerRequestParams::new(self.info_hash),
+                },
+            }),
+            TrackerUrl::Udp(url) => {
+                let udp_url = url.strip_prefix("udp://").unwrap();
+                let udp_url = match udp_url.split_once("/") {
+                    Some(s) => s.0,
+                    None => udp_url,
+                };
+
+                let connection = UdpConnectRequest::new(Arc::clone(&socket))
+                    .connect_with(udp_url)
+                    .await?;
+
+                let connection_id = connection.connection_id();
+
+                Ok(TrackerRequest {
+                    state: TrackerRequestState::Udp {
+                        url: Arc::clone(url),
+                        connection_id,
+                        socket: Arc::clone(&socket),
+                        params: UdpTrackerRequestParams::new(connection_id, self.info_hash),
+                    },
+                })
+            }
+            TrackerUrl::Invalid(url) => bail!("Unsupproted : {url}"),
+        }
     }
 
-    pub async fn connect(
-        &self,
-        socket: Arc<UdpSocket>,
-        info_hash: InfoHashEncoded,
-        peer_id: PeerID,
-    ) -> Result<()> {
+    pub async fn connect(&self, socket: Arc<UdpSocket>) -> Result<()> {
         self.inner.trys.fetch_add(1, Ordering::SeqCst);
 
-        let request = self
-            .url
-            .generate_request(socket, info_hash, peer_id)
-            .await?;
+        let request = self.tracker_request(socket).await?;
 
         // Make the HTTP or UDP request to recive a TrackerResponse
         let response = request.make_request().await?;
@@ -85,6 +110,20 @@ impl Tracker {
         self.set_response(response)?;
 
         Ok(())
+    }
+
+    pub fn get_response(&self) -> Result<MutexGuard<'_, TrackerResponse>> {
+        let response = self
+            .inner
+            .response
+            .lock()
+            .map_err(|e| anyhow!(e.to_string()))?;
+
+        Ok(response)
+    }
+
+    pub fn url(&self) -> &str {
+        self.url.url()
     }
 
     pub fn is_connected(&self) -> bool {
@@ -107,7 +146,7 @@ impl Tracker {
         Ok(())
     }
 
-    pub(crate) fn set_response(&self, response: TrackerReponse) -> Result<()> {
+    pub(crate) fn set_response(&self, response: TrackerResponse) -> Result<()> {
         let mut guard = self
             .inner
             .response
@@ -156,41 +195,6 @@ impl TrackerUrl {
             TrackerUrl::Invalid(s) => s,
         }
     }
-
-    pub async fn generate_request(
-        &self,
-        socket: Arc<UdpSocket>,
-        info_hash: InfoHashEncoded,
-        peer_id: PeerID,
-    ) -> Result<TrackerRequest> {
-        match self {
-            TrackerUrl::Http(url) => Ok(TrackerRequest::Http {
-                url: url.clone(),
-                params: HttpTrackerRequestParams::new(info_hash, peer_id),
-            }),
-            TrackerUrl::Udp(url) => {
-                let udp_url = url.strip_prefix("udp://").unwrap();
-                let udp_url = match udp_url.split_once("/") {
-                    Some(s) => s.0,
-                    None => udp_url,
-                };
-
-                let connection = UdpConnectRequest::new(Arc::clone(&socket))
-                    .connect_with(udp_url)
-                    .await?;
-
-                let connection_id = connection.connection_id();
-
-                Ok(TrackerRequest::Udp {
-                    url: Arc::clone(url),
-                    connection_id,
-                    socket: Arc::clone(&socket),
-                    params: UdpTrackerRequestParams::new(connection_id, info_hash, peer_id),
-                })
-            }
-            TrackerUrl::Invalid(url) => bail!("Unsupproted : {url}"),
-        }
-    }
 }
 
 #[cfg(test)]
@@ -205,16 +209,12 @@ mod tracker_tests {
     async fn test_tracker_request_creation() {
         let sample_url = "http://example.com/announce";
         let info_hash = InfoHash::new(b"test info_hash").as_encoded();
-        let peer_id = PeerID::default();
         let socket = Arc::new(UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap());
-        let tracker_request = TrackerUrl::new(sample_url);
-        let tracker_request = tracker_request
-            .generate_request(socket, info_hash, peer_id)
-            .await
-            .unwrap();
+        let tracker = Tracker::new(sample_url, info_hash);
+        let tracker_request = tracker.tracker_request(socket).await.unwrap();
 
-        match tracker_request {
-            TrackerRequest::Http { url, params } => {
+        match tracker_request.state {
+            TrackerRequestState::Http { url, params } => {
                 assert_eq!(url.as_ref(), sample_url);
                 assert_eq!(params.port, 6881);
                 assert_eq!(params.uploaded, 0);
@@ -225,10 +225,10 @@ mod tracker_tests {
                 assert_eq!(params.event, Some(Event::Started));
                 assert_eq!(params.numwant, Some(0));
             }
-            TrackerRequest::Udp { .. } => {
+            TrackerRequestState::Udp { .. } => {
                 unreachable!("Why is http being read as upd?")
             }
-            TrackerRequest::Empty => {}
+            TrackerRequestState::Empty => {}
         }
     }
 
@@ -237,19 +237,15 @@ mod tracker_tests {
     async fn test_tracker_request_to_url() {
         let url = "http://example.com/announce";
         let info_hash = InfoHash::new(b"test info_hash").as_encoded();
-        let peer_id = PeerID::default();
         let socket = Arc::new(UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap());
-        let tracker_request = TrackerUrl::new(url);
-        let tracker_request = tracker_request
-            .generate_request(socket, info_hash, peer_id)
-            .await
-            .unwrap();
+        let tracker = Tracker::new(url, info_hash);
+        let tracker_request = tracker.tracker_request(socket).await.unwrap();
 
         // Generate the URL with query parameters
         let generated_url = tracker_request.to_url().unwrap();
 
-        match tracker_request {
-            TrackerRequest::Http { params, .. } => {
+        match tracker_request.state {
+            TrackerRequestState::Http { params, .. } => {
                 // Verify that essential parts of the URL exist
                 assert!(generated_url.contains("http://example.com/announce"));
                 assert!(
@@ -269,15 +265,11 @@ mod tracker_tests {
         let url = "http://example.com/announce";
         let info_hash = InfoHash::new(b"test info_hash").as_encoded();
         let socket = Arc::new(UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap());
-        let peer_id = PeerID::default();
-        let tracker_request = TrackerUrl::new(url);
-        let mut tracker_request = tracker_request
-            .generate_request(socket, info_hash, peer_id)
-            .await
-            .unwrap();
+        let tracker = Tracker::new(url, info_hash);
+        let mut tracker_request = tracker.tracker_request(socket).await.unwrap();
 
-        match &mut tracker_request {
-            TrackerRequest::Http { params, .. } => {
+        match &mut tracker_request.state {
+            TrackerRequestState::Http { params, .. } => {
                 // Set compact and no_peer_id to true to check if they serialize to 1
                 params.compact = true;
                 params.no_peer_id = true;
@@ -291,8 +283,8 @@ mod tracker_tests {
         assert!(generated_url.contains("compact=1"));
         assert!(generated_url.contains("no_peer_id=1"));
 
-        match &mut tracker_request {
-            TrackerRequest::Http { params, .. } => {
+        match &mut tracker_request.state {
+            TrackerRequestState::Http { params, .. } => {
                 // Set them to false to check if they serialize to 0
                 params.compact = false;
                 params.no_peer_id = false;
@@ -313,15 +305,12 @@ mod tracker_tests {
         let url = "http://example.com/announce";
         let info_hash = InfoHash::new(b"test info_hash").as_encoded();
         let socket = Arc::new(UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap());
-        let peer_id = PeerID::default();
-        let tracker_request = TrackerUrl::new(url);
-        let mut tracker_request = tracker_request
-            .generate_request(socket, info_hash, peer_id)
-            .await
-            .unwrap();
+        let tracker_request = Tracker::new(url, info_hash);
 
-        match &mut tracker_request {
-            TrackerRequest::Http { params, .. } => {
+        let mut tracker_request = tracker_request.tracker_request(socket).await.unwrap();
+
+        match &mut tracker_request.state {
+            TrackerRequestState::Http { params, .. } => {
                 // Set optional parameters
                 params.ip = Some("2001db81".to_string());
                 params.numwant = Some(25);
