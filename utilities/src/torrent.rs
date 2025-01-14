@@ -1,6 +1,7 @@
 use std::{path::PathBuf, sync::LazyLock};
 use zung_torrent::*;
 
+#[derive(Debug)]
 pub struct TestClient {
     pub arch: Client,
     pub mit: Client,

@@ -57,7 +57,7 @@ impl DownloadSources {
                 .collect(),
             None => match meta_info.announce() {
                 Some(announce) => vec![Tracker::new(announce, info_hash)],
-                None => unreachable!(),
+                None => Vec::new(),
             },
         };
 
@@ -132,7 +132,7 @@ impl DownloadSources {
     ///
     /// # fn ughhh(download_sources: DownloadSources) {
     /// if let Some(http_seeders_list) = download_sources.http_seeders() {
-    ///     for source in http_seeders_list {
+    ///     for source in http_seeders_list.iter() {
     ///         // Process each tracker
     ///     }
     /// } else {
@@ -263,11 +263,11 @@ impl DownloadSources {
                         let (v4, v6) = peers.get_addrs();
 
                         for addr in v4 {
-                            list.insert(SocketAddr::V4(addr));
+                            list.insert(SocketAddr::V4(*addr));
                         }
 
                         for addr in v6 {
-                            list.insert(SocketAddr::V6(addr));
+                            list.insert(SocketAddr::V6(*addr));
                         }
                     }
                 }

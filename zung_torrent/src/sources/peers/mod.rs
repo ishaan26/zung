@@ -35,19 +35,30 @@ impl TrackerPeers {
         self.peers6.is_some()
     }
 
-    pub fn get_addrs(&self) -> (Vec<SocketAddrV4>, Vec<SocketAddrV6>) {
-        let mut list = Vec::new();
-        let mut list6 = Vec::new();
+    pub fn get_addrs(&self) -> (&[SocketAddrV4], &[SocketAddrV6]) {
+        static EMPTY_V4: Vec<SocketAddrV4> = Vec::new();
+        static EMPTY_V6: Vec<SocketAddrV6> = Vec::new();
 
-        if let Some(peers) = &self.peers {
-            list.extend(&peers.0);
-        }
+        let listv4 = self
+            .peers
+            .as_ref()
+            .map(|peerv4| &peerv4.0)
+            .unwrap_or(&EMPTY_V4);
 
-        if let Some(peers6) = &self.peers6 {
-            list6.extend(&peers6.0);
-        }
+        let listv6 = self
+            .peers6
+            .as_ref()
+            .map(|peerv6| &peerv6.0)
+            .unwrap_or(&EMPTY_V6);
 
-        (list, list6)
+        (listv4, listv6)
+    }
+
+    pub fn num_of_peers(&self) -> usize {
+        let v4_len = self.peers.as_ref().map(|p| p.0.len()).unwrap_or(0);
+        let v6_len = self.peers6.as_ref().map(|p| p.0.len()).unwrap_or(0);
+
+        v4_len + v6_len
     }
 }
 
@@ -172,5 +183,110 @@ impl Serialize for PeersV6 {
         }
 
         serializer.serialize_bytes(&single_slice)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
+    const BYTES_V4: &[u8] = &[
+        192, 168, 1, 1, 0x1F, 0x90, // 192.168.1.1:8080
+        192, 168, 1, 2, 0x23, 0x28, // 192.168.1.2:9000
+    ];
+
+    const BYTES_V6: &[u8] = &[
+        // [IPv6 address (16 bytes)] [Port (2 bytes)]
+        0x20, 0x01, 0x0D, 0xB8, 0x85, 0xA3, 0x00, 0x00, 0x00, 0x00, 0x8A, 0x2E, 0x03, 0x70, 0x73,
+        0x34, // IPv6 address
+        0x1F, 0x90, // Port 8080
+    ];
+
+    #[test]
+    fn test_peersv4_from_bytes_valid() {
+        let peers = PeersV4::from_bytes(BYTES_V4).unwrap();
+        let expected = vec![
+            SocketAddrV4::new(Ipv4Addr::new(192, 168, 1, 1), 8080),
+            SocketAddrV4::new(Ipv4Addr::new(192, 168, 1, 2), 9000),
+        ];
+        assert_eq!(peers.0, expected);
+    }
+
+    #[test]
+    fn test_peersv4_from_bytes_invalid() {
+        let bytes: &[u8] = &[192, 168, 1, 1, 0x1F];
+        let result = PeersV4::from_bytes(bytes);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_peersv6_from_bytes_valid() {
+        let peers = PeersV6::from_bytes(BYTES_V6).unwrap();
+        let expected = vec![SocketAddrV6::new(
+            Ipv6Addr::new(
+                0x2001, 0x0DB8, 0x85A3, 0x0000, 0x0000, 0x8A2E, 0x0370, 0x7334,
+            ),
+            8080,
+            0,
+            0,
+        )];
+        assert_eq!(peers.0, expected);
+    }
+
+    #[test]
+    fn test_peersv6_from_bytes_invalid() {
+        let bytes: &[u8] = &[
+            0x20, 0x01, 0x0D, 0xB8, 0x85, 0xA3, 0x00, 0x00, 0x00, 0x00, 0x8A, 0x2E, 0x03, 0x70,
+            0x73,
+        ];
+        let result = PeersV6::from_bytes(bytes);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_tracker_peers_from_udp_bytes_ipv4() {
+        let recv_socket = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 12345));
+        let tracker_peers = TrackerPeers::from_udp_bytes(BYTES_V4, recv_socket).unwrap();
+        assert!(tracker_peers.contains_peers_v4());
+        assert!(!tracker_peers.contains_peers_v6());
+        assert_eq!(tracker_peers.num_of_peers(), 2);
+    }
+
+    #[test]
+    fn test_tracker_peers_from_udp_bytes_ipv6() {
+        let recv_socket = SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 12345, 0, 0));
+        let tracker_peers = TrackerPeers::from_udp_bytes(BYTES_V6, recv_socket).unwrap();
+        assert!(!tracker_peers.contains_peers_v4());
+        assert!(tracker_peers.contains_peers_v6());
+        assert_eq!(tracker_peers.num_of_peers(), 1);
+    }
+
+    #[test]
+    fn test_tracker_peers_get_addrs() {
+        let tracker_peers = TrackerPeers {
+            peers: Some(PeersV4::from_bytes(BYTES_V4).unwrap()),
+            peers6: Some(PeersV6::from_bytes(BYTES_V6).unwrap()),
+        };
+
+        let (v4_addrs, v6_addrs) = tracker_peers.get_addrs();
+
+        assert_eq!(
+            v4_addrs,
+            vec![
+                SocketAddrV4::new(Ipv4Addr::new(192, 168, 1, 1), 8080),
+                SocketAddrV4::new(Ipv4Addr::new(192, 168, 1, 2), 9000),
+            ]
+        );
+
+        assert_eq!(
+            v6_addrs,
+            &vec![SocketAddrV6::new(
+                Ipv6Addr::new(0x2001, 0x0DB8, 0x85A3, 0x0000, 0x0000, 0x8A2E, 0x0370, 0x7334),
+                8080,
+                0,
+                0
+            )]
+        );
     }
 }
