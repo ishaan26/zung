@@ -1,4 +1,5 @@
 #![doc = include_str!("../README.md")]
+#![allow(clippy::mutable_key_type)] // The Socket addr is the hash key which is not mutable.
 
 #[cfg(feature = "client")]
 mod client;

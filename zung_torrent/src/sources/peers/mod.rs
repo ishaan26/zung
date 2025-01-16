@@ -1,19 +1,105 @@
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
+use std::{
+    hash::Hash,
+    net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
 
 use anyhow::{bail, Result};
 use serde::{de::Visitor, Deserialize, Serialize, Serializer};
 
+#[derive(Debug, Clone)]
+pub struct Peer {
+    addr: SocketAddr,
+    connected: Arc<AtomicBool>,
+}
+
+impl Peer {
+    fn get_octets(&self) -> Vec<u8> {
+        match &self.addr {
+            SocketAddr::V4(socket_addr_v4) => socket_addr_v4.ip().octets().to_vec(),
+            SocketAddr::V6(socket_addr_v6) => socket_addr_v6.ip().octets().to_vec(),
+        }
+    }
+
+    pub fn set_connected(&self) {
+        self.connected.store(true, Ordering::Relaxed);
+    }
+
+    pub fn is_connected(&self) -> bool {
+        self.connected.load(Ordering::Relaxed)
+    }
+}
+
+impl Hash for Peer {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.addr.hash(state);
+    }
+}
+
+impl PartialEq for Peer {
+    fn eq(&self, other: &Self) -> bool {
+        self.addr == other.addr
+    }
+}
+
+impl PartialEq<SocketAddr> for Peer {
+    fn eq(&self, other: &SocketAddr) -> bool {
+        &self.addr == other
+    }
+}
+
+impl PartialEq<SocketAddrV4> for Peer {
+    fn eq(&self, other: &SocketAddrV4) -> bool {
+        match &self.addr {
+            SocketAddr::V4(socket_addr_v4) => socket_addr_v4 == other,
+            SocketAddr::V6(..) => false,
+        }
+    }
+}
+
+impl PartialEq<SocketAddrV6> for Peer {
+    fn eq(&self, other: &SocketAddrV6) -> bool {
+        match &self.addr {
+            SocketAddr::V4(..) => false,
+            SocketAddr::V6(socket_addr_v6) => socket_addr_v6 == other,
+        }
+    }
+}
+
+impl Eq for Peer {}
+
+impl From<SocketAddrV4> for Peer {
+    fn from(value: SocketAddrV4) -> Self {
+        Self {
+            addr: SocketAddr::from(value),
+            connected: Arc::new(AtomicBool::new(false)),
+        }
+    }
+}
+
+impl From<SocketAddrV6> for Peer {
+    fn from(value: SocketAddrV6) -> Self {
+        Self {
+            addr: SocketAddr::from(value),
+            connected: Arc::new(AtomicBool::new(false)),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
-pub struct TrackerPeers {
+pub struct PeersList {
     peers: Option<PeersV4>,
     peers6: Option<PeersV6>,
 }
 
-impl TrackerPeers {
+impl PeersList {
     pub fn from_udp_bytes(bytes: &[u8], recv_socket: SocketAddr) -> Result<Self> {
         if recv_socket.is_ipv4() {
-            Ok(TrackerPeers {
+            Ok(PeersList {
                 peers: Some(PeersV4::from_bytes(bytes)?),
                 peers6: None,
             })
@@ -35,23 +121,20 @@ impl TrackerPeers {
         self.peers6.is_some()
     }
 
-    pub fn get_addrs(&self) -> (&[SocketAddrV4], &[SocketAddrV6]) {
-        static EMPTY_V4: Vec<SocketAddrV4> = Vec::new();
-        static EMPTY_V6: Vec<SocketAddrV6> = Vec::new();
+    pub fn to_vec(&self) -> Vec<Peer> {
+        static EMPTY: Vec<Peer> = Vec::new();
 
         let listv4 = self
             .peers
             .as_ref()
             .map(|peerv4| &peerv4.0)
-            .unwrap_or(&EMPTY_V4);
+            .unwrap_or(&EMPTY);
 
-        let listv6 = self
-            .peers6
-            .as_ref()
-            .map(|peerv6| &peerv6.0)
-            .unwrap_or(&EMPTY_V6);
+        let mut listv6: Vec<Peer> = self.peers6.clone().map(|p| p.0).unwrap_or(EMPTY.clone());
 
-        (listv4, listv6)
+        listv6.extend_from_slice(listv4);
+
+        listv6
     }
 
     pub fn num_of_peers(&self) -> usize {
@@ -63,7 +146,7 @@ impl TrackerPeers {
 }
 
 #[derive(Debug)]
-pub struct PeersV4(Vec<SocketAddrV4>);
+pub struct PeersV4(Vec<Peer>);
 
 impl PeersV4 {
     fn from_bytes(bytes: &[u8]) -> Result<Self> {
@@ -71,12 +154,15 @@ impl PeersV4 {
             bail!("Invalid Peers length");
         }
 
-        let peers = bytes.chunks_exact(6).map(|c| {
-            SocketAddrV4::new(
-                Ipv4Addr::new(c[0], c[1], c[2], c[3]),
-                u16::from_be_bytes([c[4], c[5]]),
-            )
-        });
+        let peers = bytes
+            .chunks_exact(6)
+            .map(|c| {
+                SocketAddrV4::new(
+                    Ipv4Addr::new(c[0], c[1], c[2], c[3]),
+                    u16::from_be_bytes([c[4], c[5]]),
+                )
+            })
+            .map(Peer::from);
 
         Ok(PeersV4(peers.collect()))
     }
@@ -116,16 +202,16 @@ impl Serialize for PeersV4 {
         let mut single_slice = Vec::with_capacity(6 * self.0.len());
 
         for peer in &self.0 {
-            single_slice.extend(peer.ip().octets());
-            single_slice.extend(peer.port().to_be_bytes());
+            single_slice.extend(peer.get_octets());
+            single_slice.extend(peer.addr.port().to_be_bytes());
         }
 
         serializer.serialize_bytes(&single_slice)
     }
 }
 
-#[derive(Debug)]
-pub struct PeersV6(Vec<SocketAddrV6>);
+#[derive(Debug, Clone)]
+pub struct PeersV6(Vec<Peer>);
 
 impl PeersV6 {
     fn from_bytes(bytes: &[u8]) -> Result<Self> {
@@ -133,12 +219,15 @@ impl PeersV6 {
             bail!("Invalid Peers Length");
         }
 
-        let peers = bytes.chunks_exact(18).map(|c| {
-            let ip: [u8; 16] = c[0..16].try_into().unwrap();
-            let port = u16::from_be_bytes([c[16], c[17]]);
+        let peers = bytes
+            .chunks_exact(18)
+            .map(|c| {
+                let ip: [u8; 16] = c[0..16].try_into().unwrap();
+                let port = u16::from_be_bytes([c[16], c[17]]);
 
-            SocketAddrV6::new(Ipv6Addr::from(ip), port, 0, 0)
-        });
+                SocketAddrV6::new(Ipv6Addr::from(ip), port, 0, 0)
+            })
+            .map(Peer::from);
 
         Ok(PeersV6(peers.collect()))
     }
@@ -178,8 +267,8 @@ impl Serialize for PeersV6 {
         let mut single_slice = Vec::with_capacity(18 * self.0.len());
 
         for peer in &self.0 {
-            single_slice.extend(peer.ip().octets());
-            single_slice.extend(peer.port().to_be_bytes());
+            single_slice.extend(peer.get_octets());
+            single_slice.extend(peer.addr.port().to_be_bytes());
         }
 
         serializer.serialize_bytes(&single_slice)
@@ -247,7 +336,7 @@ mod tests {
     #[test]
     fn test_tracker_peers_from_udp_bytes_ipv4() {
         let recv_socket = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 12345));
-        let tracker_peers = TrackerPeers::from_udp_bytes(BYTES_V4, recv_socket).unwrap();
+        let tracker_peers = PeersList::from_udp_bytes(BYTES_V4, recv_socket).unwrap();
         assert!(tracker_peers.contains_peers_v4());
         assert!(!tracker_peers.contains_peers_v6());
         assert_eq!(tracker_peers.num_of_peers(), 2);
@@ -256,7 +345,7 @@ mod tests {
     #[test]
     fn test_tracker_peers_from_udp_bytes_ipv6() {
         let recv_socket = SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::LOCALHOST, 12345, 0, 0));
-        let tracker_peers = TrackerPeers::from_udp_bytes(BYTES_V6, recv_socket).unwrap();
+        let tracker_peers = PeersList::from_udp_bytes(BYTES_V6, recv_socket).unwrap();
         assert!(!tracker_peers.contains_peers_v4());
         assert!(tracker_peers.contains_peers_v6());
         assert_eq!(tracker_peers.num_of_peers(), 1);
@@ -264,29 +353,25 @@ mod tests {
 
     #[test]
     fn test_tracker_peers_get_addrs() {
-        let tracker_peers = TrackerPeers {
+        let tracker_peers = PeersList {
             peers: Some(PeersV4::from_bytes(BYTES_V4).unwrap()),
             peers6: Some(PeersV6::from_bytes(BYTES_V6).unwrap()),
         };
 
-        let (v4_addrs, v6_addrs) = tracker_peers.get_addrs();
+        let peers = tracker_peers.to_vec();
 
         assert_eq!(
-            v4_addrs,
+            peers,
             vec![
-                SocketAddrV4::new(Ipv4Addr::new(192, 168, 1, 1), 8080),
-                SocketAddrV4::new(Ipv4Addr::new(192, 168, 1, 2), 9000),
+                Peer::from(SocketAddrV6::new(
+                    Ipv6Addr::new(0x2001, 0x0DB8, 0x85A3, 0x0000, 0x0000, 0x8A2E, 0x0370, 0x7334),
+                    8080,
+                    0,
+                    0
+                )),
+                Peer::from(SocketAddrV4::new(Ipv4Addr::new(192, 168, 1, 1), 8080)),
+                Peer::from(SocketAddrV4::new(Ipv4Addr::new(192, 168, 1, 2), 9000)),
             ]
-        );
-
-        assert_eq!(
-            v6_addrs,
-            &vec![SocketAddrV6::new(
-                Ipv6Addr::new(0x2001, 0x0DB8, 0x85A3, 0x0000, 0x0000, 0x8A2E, 0x0370, 0x7334),
-                8080,
-                0,
-                0
-            )]
         );
     }
 }

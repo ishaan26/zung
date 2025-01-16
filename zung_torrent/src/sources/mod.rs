@@ -9,16 +9,13 @@ pub mod http_seeders;
 pub mod peers;
 pub mod trackers;
 
-use std::{
-    collections::HashSet,
-    net::{Ipv4Addr, SocketAddr},
-    sync::Arc,
-};
+use std::{collections::HashSet, net::Ipv4Addr, sync::Arc};
 
 use colored::Colorize;
 use futures::{stream::FuturesUnordered, StreamExt};
 
 use anyhow::Result;
+use peers::Peer;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use tokio::{net::UdpSocket, task::JoinHandle};
 use tracing::{error, info};
@@ -186,7 +183,7 @@ impl DownloadSources {
         if let Some(list) = self.tracker_list() {
             let futures: FuturesUnordered<JoinHandle<Result<()>>> = list
                 .iter()
-                .cloned()
+                .cloned() // This performs an arc clone on the interal type.
                 .map(|tracker| {
                     tokio::spawn(async move {
                         // TODO: fix this
@@ -251,7 +248,8 @@ impl DownloadSources {
         }
     }
 
-    pub fn peers_list(&self) -> HashSet<SocketAddr> {
+    #[allow(clippy::mutable_key_type)] // The Socket addr is the hash key which is not mutable.
+    pub fn peers_list(&self) -> HashSet<Peer> {
         match self {
             DownloadSources::Trackers { tracker_list }
             | DownloadSources::Hybrid { tracker_list, .. } => {
@@ -260,14 +258,9 @@ impl DownloadSources {
                 for tracker in tracker_list {
                     let response = tracker.get_response().unwrap();
                     if let Some(peers) = response.get_peers() {
-                        let (v4, v6) = peers.get_addrs();
-
-                        for addr in v4 {
-                            list.insert(SocketAddr::V4(*addr));
-                        }
-
-                        for addr in v6 {
-                            list.insert(SocketAddr::V6(*addr));
+                        for peer in peers.to_vec() {
+                            peer.set_connected();
+                            list.insert(peer);
                         }
                     }
                 }

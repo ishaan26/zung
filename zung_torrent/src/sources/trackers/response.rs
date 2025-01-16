@@ -4,7 +4,7 @@ use anyhow::Result;
 use bytes::{Buf, BytesMut};
 use serde::Deserialize;
 
-use crate::sources::peers::TrackerPeers;
+use crate::sources::peers::PeersList;
 
 use super::Action;
 
@@ -20,7 +20,7 @@ impl TrackerResponse {
         }
     }
 
-    pub fn get_peers(&self) -> Option<&TrackerPeers> {
+    pub fn get_peers(&self) -> Option<&PeersList> {
         match &self.state {
             TrackerResponseState::Http(http_tracker_response) => {
                 http_tracker_response.peers.as_ref()
@@ -72,7 +72,7 @@ pub struct HttpTrackerResponse {
     pub(crate) incomplete: Option<u64>,
 
     #[serde(flatten)]
-    pub(crate) peers: Option<TrackerPeers>,
+    pub(crate) peers: Option<PeersList>,
 }
 
 // Offset      Size            Name            Value
@@ -92,7 +92,7 @@ pub struct UdpTrackerResponse {
     interval: i32,
     leechers: i32,
     seeders: i32,
-    peers: Option<TrackerPeers>,
+    peers: Option<PeersList>,
 }
 
 impl UdpTrackerResponse {
@@ -105,7 +105,7 @@ impl UdpTrackerResponse {
         let leechers = bytes.get_i32();
         let seeders = bytes.get_i32();
         let peers = if bytes.len() >= 6 {
-            Some(TrackerPeers::from_udp_bytes(bytes.as_ref(), recv_socket)?)
+            Some(PeersList::from_udp_bytes(bytes.as_ref(), recv_socket)?)
         } else {
             None
         };
