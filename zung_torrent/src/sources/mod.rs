@@ -58,7 +58,7 @@ impl DownloadSources {
             },
         };
 
-        fn http_seeder_list(url_list: &Vec<String>, meta_info: &MetaInfo) -> HttpSeederList {
+        let http_seeder_list = |url_list: &[String]| {
             let mut list = Vec::with_capacity(url_list.len());
             for url in url_list {
                 if !url.is_empty() {
@@ -66,12 +66,12 @@ impl DownloadSources {
                 }
             }
             HttpSeederList::new(list)
-        }
+        };
 
         match meta_info.url_list() {
             Some(url_list) => {
                 if meta_info.announce.is_some() || meta_info.announce_list.is_some() {
-                    let http_seeder_list = http_seeder_list(url_list, meta_info);
+                    let http_seeder_list = http_seeder_list(url_list);
                     if http_seeder_list.is_empty() {
                         return Self::Trackers { tracker_list };
                     }
@@ -81,7 +81,7 @@ impl DownloadSources {
                     }
                 } else {
                     Self::HttpSeeders {
-                        http_seeder_list: http_seeder_list(url_list, meta_info),
+                        http_seeder_list: http_seeder_list(url_list),
                     }
                 }
             }
