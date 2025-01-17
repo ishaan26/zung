@@ -368,14 +368,14 @@ mod tests {
         assert_eq!(
             peers,
             vec![
+                Peer::from(SocketAddrV4::new(Ipv4Addr::new(192, 168, 1, 1), 8080)),
+                Peer::from(SocketAddrV4::new(Ipv4Addr::new(192, 168, 1, 2), 9000)),
                 Peer::from(SocketAddrV6::new(
                     Ipv6Addr::new(0x2001, 0x0DB8, 0x85A3, 0x0000, 0x0000, 0x8A2E, 0x0370, 0x7334),
                     8080,
                     0,
                     0
                 )),
-                Peer::from(SocketAddrV4::new(Ipv4Addr::new(192, 168, 1, 1), 8080)),
-                Peer::from(SocketAddrV4::new(Ipv4Addr::new(192, 168, 1, 2), 9000)),
             ]
         );
     }
