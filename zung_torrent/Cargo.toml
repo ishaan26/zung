@@ -27,9 +27,16 @@ indexmap = "2.7.0"
 rand = "0.8.5"
 human_bytes = { version = "0.4.3", optional = true }
 reqwest = "0.12.12"
+parking_lot = "0.12.3"
 tracing = "0.1.41"
 
-tokio = { version = "1.43.0", features = ["net", "rt", "macros"] }
+tokio = { version = "1.43.0", features = [
+  "net",
+  "rt",
+  "rt-multi-thread",
+  "macros",
+  "tracing",
+] }
 futures = "0.3.31"
 
 serde = { version = "1.0.217", features = ["derive"] }

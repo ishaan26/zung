@@ -90,7 +90,7 @@ impl Client {
 
             let info_hash = info.join().expect("Unable to calculate infohash");
 
-            let sources = DownloadSources::new(&meta_info, info_hash.as_encoded());
+            let sources = DownloadSources::new(&meta_info);
 
             Ok(Client {
                 meta_info,

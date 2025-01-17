@@ -20,8 +20,12 @@ impl TrackerResponse {
         }
     }
 
+    pub(crate) fn state(&self) -> &TrackerResponseState {
+        &self.state
+    }
+
     pub fn get_peers(&self) -> Option<&PeersList> {
-        match &self.state {
+        match &self.state() {
             TrackerResponseState::Http(http_tracker_response) => {
                 http_tracker_response.peers.as_ref()
             }
@@ -31,7 +35,7 @@ impl TrackerResponse {
     }
 
     pub fn is_empty(&self) -> bool {
-        matches!(self.state, TrackerResponseState::Empty)
+        matches!(self.state(), &TrackerResponseState::Empty)
     }
 }
 

@@ -87,12 +87,16 @@ impl TrackerRequest {
         }
     }
 
+    pub(crate) fn state(&self) -> &TrackerRequestState {
+        &self.state
+    }
+
     /// Returns `true` if the tracker request is [`Http`].
     ///
     /// [`Http`]: TrackerRequest::Http
     #[must_use]
     pub fn is_http(&self) -> bool {
-        matches!(self.state, TrackerRequestState::Http { .. })
+        matches!(self.state(), &TrackerRequestState::Http { .. })
     }
 
     /// Returns `true` if the tracker request is [`Udp`].
@@ -100,13 +104,13 @@ impl TrackerRequest {
     /// [`Udp`]: TrackerRequest::Udp
     #[must_use]
     pub fn is_udp(&self) -> bool {
-        matches!(self.state, TrackerRequestState::Udp { .. })
+        matches!(self.state(), &TrackerRequestState::Udp { .. })
     }
 
     /// Returns the `connection_id` (if) recieved from a UDP tracker.
     pub fn connection_id(&self) -> Option<i64> {
-        if let TrackerRequestState::Udp { connection_id, .. } = self.state {
-            Some(connection_id)
+        if let TrackerRequestState::Udp { connection_id, .. } = self.state() {
+            Some(*connection_id)
         } else {
             None
         }
@@ -114,7 +118,7 @@ impl TrackerRequest {
 
     /// Convert to url string for making a get request.
     pub fn to_url(&self) -> Result<String> {
-        match &self.state {
+        match &self.state() {
             TrackerRequestState::Http { url, params } => {
                 let announce = url;
                 let info_hash = params.info_hash.to_url_encoded();
@@ -144,8 +148,8 @@ impl TrackerRequest {
 
     /// Makes the Tracker request and retunrs the Tracker Response.
     #[instrument(skip_all, name = "Tracker Request")]
-    pub async fn make_request(&self) -> Result<TrackerResponse> {
-        match &self.state {
+    pub async fn announce(&self) -> Result<TrackerResponse> {
+        match &self.state() {
             // HTTP request wherein response is recieved as a bencode dictionary.
             TrackerRequestState::Http { .. } => {
                 let url = self.to_url()?;
@@ -221,8 +225,8 @@ impl TrackerRequest {
     }
 }
 
-/// HTTP-specific parameters for the tracker request based on the (torrent
-/// spec)[https://wiki.theory.org/BitTorrentSpecification#Tracker_Request_Parameters]
+/// HTTP-specific parameters for the tracker request based on the [torrent
+/// spec](https://wiki.theory.org/BitTorrentSpecification#Tracker_Request_Parameters)
 #[derive(Debug, Serialize, Clone)]
 pub struct HttpTrackerRequestParams {
     /// The info_hash calculated from the meta_info file provided to the Client.
@@ -346,6 +350,12 @@ impl HttpTrackerRequestParams {
     }
 }
 
+/// UDP-specific parameters for the tracker request based on the [UDP Tracker Protocol for
+/// BitTorrent](https://www.bittorrent.org/beps/bep_0015.html).
+///
+/// The request is structured as follows:
+///
+/// ```text
 /// Offset  Size       Name       Value
 /// 0       64-bit    integer    connection_id
 /// 8       32-bit    integer    action          1 // announce
@@ -361,6 +371,7 @@ impl HttpTrackerRequestParams {
 /// 92      32-bit    integer    num_want        -1 // default
 /// 96      16-bit    integer    port
 /// 98
+/// ```
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct UdpTrackerRequestParams {
@@ -453,12 +464,17 @@ impl Event {
     }
 }
 
-///connect request:
+/// For obtaining the `connection_id` from the tracker.
+///
+/// The request is structured as follows:
+///
+/// ```text
 /// Offset  Size            Name            Value
 /// 0       64-bit integer  protocol_id     0x41727101980 // magic constant
 /// 8       32-bit integer  action          0 // connect
 /// 12      32-bit integer  transaction_id
 /// 16
+/// ```
 #[derive(Debug)]
 pub struct UdpConnectRequest {
     socket: Arc<UdpSocket>,
@@ -467,13 +483,17 @@ pub struct UdpConnectRequest {
     transaction_id: i32,
 }
 
-/// connect response:
+/// The response received from a tracker upon making the [`UdpConnectRequest`].
 ///
+/// The response is structured as follows:
+///
+/// ```text
 /// Offset  Size            Name            Value
 /// 0       32-bit integer  action          0 // connect
 /// 4       32-bit integer  transaction_id
 /// 8       64-bit integer  connection_id
 /// 16
+/// ```
 #[derive(Debug)]
 #[repr(C)]
 pub struct UdpConnectResponse {

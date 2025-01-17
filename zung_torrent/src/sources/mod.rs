@@ -45,15 +45,15 @@ pub enum DownloadSources {
 }
 
 impl DownloadSources {
-    pub fn new(meta_info: &MetaInfo, info_hash: InfoHashEncoded) -> Self {
+    pub fn new(meta_info: &MetaInfo) -> Self {
         let tracker_list = match meta_info.announce_list() {
             Some(announce_list) => announce_list
                 .par_iter()
                 .flatten()
-                .map(|announce| Tracker::new(announce, info_hash))
+                .map(|announce| Tracker::new(announce))
                 .collect(),
             None => match meta_info.announce() {
-                Some(announce) => vec![Tracker::new(announce, info_hash)],
+                Some(announce) => vec![Tracker::new(announce)],
                 None => Vec::new(),
             },
         };
@@ -179,7 +179,7 @@ impl DownloadSources {
         matches!(self, Self::Hybrid { .. })
     }
 
-    pub async fn connect_all(&self) {
+    pub async fn connect_all(&self, info_hash: InfoHashEncoded) {
         if let Some(list) = self.tracker_list() {
             let futures: FuturesUnordered<JoinHandle<Result<()>>> = list
                 .iter()
@@ -189,7 +189,7 @@ impl DownloadSources {
                         // TODO: fix this
                         let socket =
                             Arc::new(UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap());
-                        tracker.connect(socket).await
+                        tracker.connect(socket, info_hash).await
                     })
                 })
                 .collect();
@@ -206,7 +206,7 @@ impl DownloadSources {
         }
     }
 
-    pub async fn retry_connect_all(&self) {
+    pub async fn retry_connect_all(&self, info_hash: InfoHashEncoded) {
         if let Some(list) = self.tracker_list() {
             let mut handles = Vec::new();
             for tracker in list {
@@ -220,7 +220,7 @@ impl DownloadSources {
                                 UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap(),
                             );
 
-                            match tracker.connect(socket).await {
+                            match tracker.connect(socket, info_hash).await {
                                 Ok(_) => {
                                     info!("Connected to : {}", tracker.url());
                                     break;
