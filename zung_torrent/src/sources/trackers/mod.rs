@@ -85,7 +85,7 @@ impl Tracker {
     ///   method is only usefull if you are a big torrent nerd.
     pub async fn tracker_request(
         &self,
-        socket: Arc<UdpSocket>,
+        socket: UdpSocket,
         info_hash: InfoHashEncoded,
     ) -> Result<TrackerRequest> {
         match &self.url {
@@ -97,13 +97,10 @@ impl Tracker {
             }),
             TrackerUrl::Udp(url) => {
                 let udp_url = url.strip_prefix("udp://").unwrap();
-                let udp_url = match udp_url.split_once("/") {
-                    Some(s) => s.0,
-                    None => udp_url,
-                };
+                let udp_url = udp_url.split_once('/').map(|url| url.0).unwrap_or(udp_url);
 
-                let connection = UdpConnectRequest::new(Arc::clone(&socket))
-                    .connect_with(udp_url)
+                let connection = UdpConnectRequest::new()
+                    .connect_with(udp_url, &socket)
                     .await?;
 
                 let connection_id = connection.connection_id();
@@ -112,7 +109,7 @@ impl Tracker {
                     state: TrackerRequestState::Udp {
                         url: Arc::clone(url),
                         connection_id,
-                        socket: Arc::clone(&socket),
+                        socket,
                         params: UdpTrackerRequestParams::new(connection_id, info_hash),
                     },
                 })
@@ -129,7 +126,7 @@ impl Tracker {
     /// # Parameters
     /// - `socket`: An `Arc` to a `UdpSocket` used for communication.
     /// - `info_hash`: The encoded info hash for the torrent.
-    pub async fn connect(&self, socket: Arc<UdpSocket>, info_hash: InfoHashEncoded) -> Result<()> {
+    pub async fn connect(&self, socket: UdpSocket, info_hash: InfoHashEncoded) -> Result<()> {
         self.inner.trys.fetch_add(1, Ordering::SeqCst);
 
         let request = self.tracker_request(socket, info_hash).await?;
@@ -240,7 +237,7 @@ mod tracker_tests {
     async fn test_tracker_request_creation() {
         let sample_url = "http://example.com/announce";
         let info_hash = InfoHash::new(b"test info_hash").as_encoded();
-        let socket = Arc::new(UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap());
+        let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap();
         let tracker = Tracker::new(sample_url);
         let tracker_request = tracker.tracker_request(socket, info_hash).await.unwrap();
 
@@ -268,7 +265,7 @@ mod tracker_tests {
     async fn test_tracker_request_to_url() {
         let url = "http://example.com/announce";
         let info_hash = InfoHash::new(b"test info_hash").as_encoded();
-        let socket = Arc::new(UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap());
+        let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap();
         let tracker = Tracker::new(url);
         let tracker_request = tracker.tracker_request(socket, info_hash).await.unwrap();
 
@@ -295,7 +292,7 @@ mod tracker_tests {
     async fn test_bool_as_int_serialization() {
         let url = "http://example.com/announce";
         let info_hash = InfoHash::new(b"test info_hash").as_encoded();
-        let socket = Arc::new(UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap());
+        let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap();
         let tracker = Tracker::new(url);
         let mut tracker_request = tracker.tracker_request(socket, info_hash).await.unwrap();
 
@@ -335,7 +332,7 @@ mod tracker_tests {
     async fn test_optional_parameters() {
         let url = "http://example.com/announce";
         let info_hash = InfoHash::new(b"test info_hash").as_encoded();
-        let socket = Arc::new(UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap());
+        let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap();
         let tracker_request = Tracker::new(url);
 
         let mut tracker_request = tracker_request

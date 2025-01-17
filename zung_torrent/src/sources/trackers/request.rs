@@ -68,7 +68,7 @@ pub(crate) enum TrackerRequestState {
         connection_id: i64,
 
         /// Shared UDP socket for communication with the tracker
-        socket: Arc<UdpSocket>,
+        socket: UdpSocket,
 
         /// UDP-specific parameters for the tracker request based on the (torrent
         /// spec)[https://www.bittorrent.org/beps/bep_0015.html]
@@ -477,7 +477,6 @@ impl Event {
 /// ```
 #[derive(Debug)]
 pub struct UdpConnectRequest {
-    socket: Arc<UdpSocket>,
     protocol_id: i64,
     action: Action,
     transaction_id: i32,
@@ -509,9 +508,8 @@ impl UdpConnectResponse {
 }
 
 impl UdpConnectRequest {
-    pub(crate) fn new(socket: Arc<UdpSocket>) -> Self {
+    pub(crate) fn new() -> Self {
         Self {
-            socket,
             protocol_id: UDP_PROTOCOL_ID,
             action: Action::Connect,
             transaction_id: UDP_TRANSACTION_ID,
@@ -532,11 +530,13 @@ impl UdpConnectRequest {
     }
 
     #[instrument(name = "udp_connect_request", skip(self))]
-    pub(crate) async fn connect_with(&self, udp_url: &str) -> Result<UdpConnectResponse> {
+    pub(crate) async fn connect_with(
+        &self,
+        udp_url: &str,
+        socket: &UdpSocket,
+    ) -> Result<UdpConnectResponse> {
         let request_bytes = self.as_bytes();
         let mut response = [0_u8; 16];
-
-        let socket = &self.socket;
 
         timeout(REQUEST_TIMEOUT_DURATION, socket.connect(udp_url))
             .await

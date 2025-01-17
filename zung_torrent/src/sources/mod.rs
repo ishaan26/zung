@@ -9,7 +9,7 @@ pub mod http_seeders;
 pub mod peers;
 pub mod trackers;
 
-use std::{collections::HashSet, net::Ipv4Addr, sync::Arc};
+use std::{collections::HashSet, net::Ipv4Addr};
 
 use colored::Colorize;
 use futures::{stream::FuturesUnordered, StreamExt};
@@ -188,8 +188,7 @@ impl DownloadSources {
                 .map(|tracker| {
                     tokio::spawn(async move {
                         // TODO: fix this
-                        let socket =
-                            Arc::new(UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap());
+                        let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap();
                         tracker.connect(socket, info_hash).await
                     })
                 })
@@ -217,9 +216,7 @@ impl DownloadSources {
                         let mut i = 0;
                         loop {
                             i += 1;
-                            let socket = Arc::new(
-                                UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap(),
-                            );
+                            let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap();
 
                             match tracker.connect(socket, info_hash).await {
                                 Ok(_) => {
