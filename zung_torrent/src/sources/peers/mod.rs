@@ -130,11 +130,16 @@ impl PeersList {
             .map(|peerv4| &peerv4.0)
             .unwrap_or(&EMPTY);
 
-        let mut listv6: Vec<Peer> = self.peers6.clone().map(|p| p.0).unwrap_or(EMPTY.clone());
+        let listv6 = self
+            .peers6
+            .as_ref()
+            .map(|peerv6| &peerv6.0)
+            .unwrap_or(&EMPTY);
 
-        listv6.extend_from_slice(listv4);
-
-        listv6
+        let mut combined = Vec::with_capacity(listv4.len() + listv6.len());
+        combined.extend_from_slice(listv4);
+        combined.extend_from_slice(listv6);
+        combined
     }
 
     pub fn num_of_peers(&self) -> usize {

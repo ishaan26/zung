@@ -179,10 +179,11 @@ impl DownloadSources {
         matches!(self, Self::Hybrid { .. })
     }
 
-    pub async fn connect_all(&self, info_hash: InfoHashEncoded) {
+    pub async fn announce_all(&self, info_hash: InfoHashEncoded) {
         if let Some(list) = self.tracker_list() {
             let futures: FuturesUnordered<JoinHandle<Result<()>>> = list
                 .iter()
+                .filter(|tracker| !tracker.is_connected())
                 .cloned() // This performs an arc clone on the interal type.
                 .map(|tracker| {
                     tokio::spawn(async move {
@@ -248,26 +249,23 @@ impl DownloadSources {
         }
     }
 
-    #[allow(clippy::mutable_key_type)] // The Socket addr is the hash key which is not mutable.
-    pub fn peers_list(&self) -> HashSet<Peer> {
+    pub fn peers_list(&self) -> Result<HashSet<Peer>> {
         match self {
             DownloadSources::Trackers { tracker_list }
             | DownloadSources::Hybrid { tracker_list, .. } => {
                 let mut list = HashSet::new();
 
                 for tracker in tracker_list {
-                    let response = tracker.get_response().unwrap();
-                    if let Some(peers) = response.get_peers() {
-                        for peer in peers.to_vec() {
-                            peer.set_connected();
+                    if let Ok(peers) = tracker.peers_list() {
+                        for peer in peers {
                             list.insert(peer);
                         }
                     }
                 }
 
-                list
+                Ok(list)
             }
-            DownloadSources::HttpSeeders { .. } => HashSet::new(),
+            DownloadSources::HttpSeeders { .. } => Ok(HashSet::new()),
         }
     }
 }

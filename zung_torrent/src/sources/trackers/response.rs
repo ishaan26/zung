@@ -39,6 +39,12 @@ impl TrackerResponse {
     }
 }
 
+impl AsRef<Self> for TrackerResponse {
+    fn as_ref(&self) -> &Self {
+        self
+    }
+}
+
 #[derive(Debug)]
 #[allow(dead_code)]
 pub(crate) enum TrackerResponseState {

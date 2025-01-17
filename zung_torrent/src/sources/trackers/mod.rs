@@ -17,7 +17,9 @@ use tokio::net::UdpSocket;
 
 use crate::meta_info::InfoHashEncoded;
 
-/// For announcing to a tracker.
+use super::peers::Peer;
+
+/// For announcing to a torrent tracker.
 ///
 /// A torrent tracker is web service which responds to HTTP GET requests or UDP requests basesd on
 /// the tracker urls contained in the [`MetaInfo`](crate::MetaInfo). The requests include
@@ -41,6 +43,11 @@ struct TrackerInner {
 }
 
 impl Clone for Tracker {
+    /// Clones the `Tracker` instance, sharing its inner state between clones.
+    ///
+    /// # Note
+    ///
+    /// Internally this is just an [`Arc::clone`] on the type fields.
     fn clone(&self) -> Self {
         Self {
             url: self.url.clone(),
@@ -50,7 +57,8 @@ impl Clone for Tracker {
 }
 
 impl Tracker {
-    pub fn new(url: &str) -> Self {
+    /// Creates a new tracker with empty state.
+    pub(crate) fn new(url: &str) -> Self {
         let inner = TrackerInner {
             request: Mutex::new(TrackerRequest::empty()),
             response: Mutex::new(TrackerResponse::empty()),
@@ -64,7 +72,17 @@ impl Tracker {
         }
     }
 
-    /// Constructs the [`TrackerRequest`].
+    /// Constructs the [`TrackerRequest`] which then allows you to
+    /// [`announce`](TrackerRequest::announce) to the subject [`Tracker`].
+    ///
+    /// # Note
+    ///
+    /// - In case the Tracker contains a Udp url, this will perform the [`UdpConnectRequest`] (see
+    ///   its documentation for more information) to obtain the `connection_id` from the tracker.
+    ///
+    /// - This is not intented to be used a an end user of this library. Please see
+    ///   [`connect`](Tracker::connect) method instead which internally performs this function. This
+    ///   method is only usefull if you are a big torrent nerd.
     pub async fn tracker_request(
         &self,
         socket: Arc<UdpSocket>,
@@ -103,6 +121,14 @@ impl Tracker {
         }
     }
 
+    /// Connects to the tracker and updates its state.     
+    ///
+    /// This method sends a request to the tracker (via HTTP or UDP) to retrieve the response.
+    /// The response is then stored in the tracker's state for later use.
+    ///
+    /// # Parameters
+    /// - `socket`: An `Arc` to a `UdpSocket` used for communication.
+    /// - `info_hash`: The encoded info hash for the torrent.
     pub async fn connect(&self, socket: Arc<UdpSocket>, info_hash: InfoHashEncoded) -> Result<()> {
         self.inner.trys.fetch_add(1, Ordering::SeqCst);
 
@@ -119,10 +145,20 @@ impl Tracker {
         Ok(())
     }
 
-    pub fn get_response(&self) -> Result<MutexGuard<'_, TrackerResponse>> {
-        let response = self.inner.response.lock();
+    pub fn get_response_guarded(&self) -> MutexGuard<'_, TrackerResponse> {
+        self.inner.response.lock()
+    }
 
-        Ok(response)
+    pub fn peers_list(&self) -> Result<Vec<Peer>> {
+        if !self.is_connected() {
+            bail!("Peers list cannot be generated on an unconnected tracker")
+        }
+
+        if let Some(list) = self.get_response_guarded().get_peers() {
+            Ok(list.to_vec())
+        } else {
+            bail!("No peers in the Tracker")
+        }
     }
 
     pub fn url(&self) -> &str {

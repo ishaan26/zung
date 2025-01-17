@@ -76,7 +76,7 @@ impl TorrentArgs {
 
                 let info_hash = torrent.info_hash().as_encoded();
 
-                torrent.sources().connect_all(info_hash).await;
+                torrent.sources().announce_all(info_hash).await;
 
                 if let Some(list) = torrent.sources().tracker_list() {
                     for t in list {
