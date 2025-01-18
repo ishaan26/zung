@@ -1,4 +1,4 @@
-//! For handleing torrent tracker requests and responses.
+//! For handling torrent tracker requests and responses.
 //!
 //! See the [`Tracker`] documentation for more information.
 
@@ -19,15 +19,16 @@ use crate::meta_info::InfoHashEncoded;
 
 use super::peers::Peer;
 
-/// For announcing to a torrent tracker.
+/// Represents a UDP or HTTP torrent tracker.
 ///
 /// A torrent tracker is web service which responds to HTTP GET requests or UDP requests basesd on
-/// the tracker urls contained in the [`MetaInfo`](crate::MetaInfo). The requests include
-/// metrics from clients that help the tracker keep overall statistics about the torrent. The
-/// response includes a peer list that helps the client participate in the torrent. The base URL
-/// consists of the "announce URL" as defined in the metainfo (.torrent) file. The parameters are
-/// then added to this URL, using standard CGI methods (i.e. a '?' after the announce URL, followed
-/// by 'param=value' sequences separated by '&').
+/// the tracker urls contained in the [`MetaInfo`](crate::MetaInfo). The requests include metrics
+/// from clients that help the tracker keep overall statistics about the torrent. The response
+/// includes a [peer list](super::peers::PeersList) that helps the client participate in the
+/// torrent. The base URL consists of the "announce URL" as defined in the
+/// [`MetaInfo`](crate::MetaInfo) (.torrent) file. The parameters are then added to this URL, using
+/// standard CGI methods (i.e. a '?' after the announce URL, followed by 'param=value' sequences
+/// separated by '&').
 #[derive(Debug)]
 pub struct Tracker {
     url: TrackerUrl,
@@ -80,9 +81,9 @@ impl Tracker {
     /// - In case the Tracker contains a Udp url, this will perform the [`UdpConnectRequest`] (see
     ///   its documentation for more information) to obtain the `connection_id` from the tracker.
     ///
-    /// - This is not intented to be used a an end user of this library. Please see
-    ///   [`connect`](Tracker::connect) method instead which internally performs this function. This
-    ///   method is only usefull if you are a big torrent nerd.
+    /// - This is not intended to be used as an end user of this library. Please see
+    ///   [`announce`](Tracker::announce) method instead which internally performs this function. This
+    ///   method is only useful if you are a big torrent nerd.
     pub async fn tracker_request(
         &self,
         socket: UdpSocket,
@@ -126,7 +127,7 @@ impl Tracker {
     /// # Parameters
     /// - `socket`: An `Arc` to a `UdpSocket` used for communication.
     /// - `info_hash`: The encoded info hash for the torrent.
-    pub async fn connect(&self, socket: UdpSocket, info_hash: InfoHashEncoded) -> Result<()> {
+    pub async fn announce(&self, socket: UdpSocket, info_hash: InfoHashEncoded) -> Result<()> {
         self.inner.trys.fetch_add(1, Ordering::SeqCst);
 
         let request = self.tracker_request(socket, info_hash).await?;
@@ -151,7 +152,7 @@ impl Tracker {
             bail!("Peers list cannot be generated on an unconnected tracker")
         }
 
-        if let Some(list) = self.get_response_guarded().get_peers() {
+        if let Some(list) = self.get_response_guarded().get_peers_list() {
             Ok(list.to_vec())
         } else {
             bail!("No peers in the Tracker")

@@ -1,6 +1,6 @@
 # Zung Torrent - A BitTorrent Client Library
 
-This Library is an implementation of the [The BitTorrent Protocol Specification](https://www.bittorrent.org/beps/bep_0003.html)
+This Library is an implementation of the [The BitTorrent Protocol Specification](http://www.bittorrent.org/beps/bep_0003.html)
 
 ## Zung Family
 

@@ -7,7 +7,7 @@ use serde::Serialize;
 
 use tokio::net::UdpSocket;
 use tokio::time::timeout;
-use tracing::{instrument, trace};
+use tracing::{debug, instrument};
 use zung_parsers::bencode;
 
 use crate::client::PEER_ID;
@@ -91,22 +91,6 @@ impl TrackerRequest {
         &self.state
     }
 
-    /// Returns `true` if the tracker request is [`Http`].
-    ///
-    /// [`Http`]: TrackerRequest::Http
-    #[must_use]
-    pub fn is_http(&self) -> bool {
-        matches!(self.state(), &TrackerRequestState::Http { .. })
-    }
-
-    /// Returns `true` if the tracker request is [`Udp`].
-    ///
-    /// [`Udp`]: TrackerRequest::Udp
-    #[must_use]
-    pub fn is_udp(&self) -> bool {
-        matches!(self.state(), &TrackerRequestState::Udp { .. })
-    }
-
     /// Returns the `connection_id` (if) recieved from a UDP tracker.
     pub fn connection_id(&self) -> Option<i64> {
         if let TrackerRequestState::Udp { connection_id, .. } = self.state() {
@@ -158,7 +142,7 @@ impl TrackerRequest {
                     .with_context(|| format!("Connection Timed Out: {url}"))?
                     .context(format!("Failed to connect: {url}"))?;
 
-                trace!(url, "Request made successfully");
+                debug!(url, "Request made successfully");
 
                 let response = request.bytes().await?;
 
@@ -167,7 +151,7 @@ impl TrackerRequest {
 
                 let response: HttpTrackerResponse = bencode::from_bytes(&response)?;
 
-                trace!(url, "Received response");
+                debug!(url, "Received response");
 
                 Ok(TrackerResponse {
                     state: TrackerResponseState::Http(response),
@@ -190,7 +174,7 @@ impl TrackerRequest {
                     .with_context(|| format!("Send Timed Out: {url}"))?
                     .context("Sending connect request")?;
 
-                trace!("UDP Tracker Request Sent");
+                debug!("UDP Tracker Request Sent");
 
                 let (rec, socket) = timeout(
                     REQUEST_TIMEOUT_DURATION,
@@ -204,7 +188,7 @@ impl TrackerRequest {
                     bail!("Invalid or No response recieved: {url}")
                 }
 
-                trace!("UDP Tracker Response Recieved");
+                debug!("UDP Tracker Response Recieved");
 
                 let response = UdpTrackerResponse::from_bytes(&response[..rec], socket)?;
 
@@ -543,21 +527,21 @@ impl UdpConnectRequest {
             .with_context(|| format!("Connection Timed Out: {udp_url}"))?
             .context(format!("Failed to connect: {udp_url}"))?;
 
-        trace!("Connected");
+        debug!("Connected");
 
         timeout(REQUEST_TIMEOUT_DURATION, socket.send(&request_bytes))
             .await
             .with_context(|| format!("Send Timed Out: {udp_url}"))?
             .context("Sending connect request")?;
 
-        trace!("Request Sent");
+        debug!("Request Sent");
 
         timeout(REQUEST_TIMEOUT_DURATION, socket.recv(&mut response))
             .await
             .with_context(|| format!("Recieve Timed Out: {udp_url}"))?
             .context(format!("Failed to recieve any response: {udp_url}"))?;
 
-        trace!("Response Recieved");
+        debug!("Response Recieved");
 
         let udp_response = UdpConnectResponse {
             action: Action::from_i32(i32::from_be_bytes(response[0..4].try_into()?))?,

@@ -11,7 +11,6 @@ pub mod trackers;
 
 use std::{collections::HashSet, net::Ipv4Addr};
 
-use colored::Colorize;
 use futures::{stream::FuturesUnordered, StreamExt};
 
 use anyhow::Result;
@@ -26,7 +25,8 @@ use trackers::Tracker;
 
 /// Representing different data sources (trackers and HTTP seeders) for a torrent.
 ///
-/// This enum is constructed with the [`sources`](crate::Client::sources) method.
+/// This enum is constructed when the [`Client`](crate::Client) is initialized. A reference to it
+/// can be drawn from the [`sources`](crate::Client::sources) method.
 #[derive(Debug, Clone)]
 pub enum DownloadSources {
     /// Genarated if only `announce` or `announce_list` keys are specified in the [`MetaInfo`]
@@ -45,6 +45,13 @@ pub enum DownloadSources {
 }
 
 impl DownloadSources {
+    /// Creates a new [`DownloadSources`] from the provided [`MetaInfo`] file.
+    ///
+    /// IMPORTANT NOTE:
+    ///
+    /// This type is created and stored in the [`Client`](crate::Client) type and the recommended
+    /// way to access this is by using the [`sources`](crate::Client::sources) method.
+    /// But you do you! :).
     pub fn new(meta_info: &MetaInfo) -> Self {
         let tracker_list = match meta_info.announce_list() {
             Some(announce_list) => announce_list
@@ -97,7 +104,7 @@ impl DownloadSources {
     ///
     /// # fn ughhh(download_sources: DownloadSources) {
     /// if let Some(tracker_list) = download_sources.tracker_list() {
-    ///     for source in tracker_list {
+    ///     for tracker in tracker_list {
     ///         // Process each tracker
     ///     }
     /// } else {
@@ -105,6 +112,12 @@ impl DownloadSources {
     /// }
     /// # }
     /// ```
+    ///
+    /// # NOTE:
+    ///
+    /// Please note that if this method is used before performing the
+    /// [`announce_all`](DownloadSources::announce_all) method, this will return the [`Tracker`] in its
+    /// uninitialized state, meaning that each Tracker will have to be announced mannually.
     pub fn tracker_list(&self) -> Option<&Vec<Tracker>> {
         match self {
             DownloadSources::Trackers { tracker_list }
@@ -129,8 +142,8 @@ impl DownloadSources {
     ///
     /// # fn ughhh(download_sources: DownloadSources) {
     /// if let Some(http_seeders_list) = download_sources.http_seeders() {
-    ///     for source in http_seeders_list.iter() {
-    ///         // Process each tracker
+    ///     for seeder in http_seeders_list.iter() {
+    ///         // Process each seeder
     ///     }
     /// } else {
     ///     println!("No http seeder available for this source.");
@@ -179,17 +192,16 @@ impl DownloadSources {
         matches!(self, Self::Hybrid { .. })
     }
 
+    /// Announce to all trackers in the torrent
     pub async fn announce_all(&self, info_hash: InfoHashEncoded) {
         if let Some(list) = self.tracker_list() {
             let futures: FuturesUnordered<JoinHandle<Result<()>>> = list
                 .iter()
-                .filter(|tracker| !tracker.is_connected())
                 .cloned() // This performs an arc clone on the interal type.
                 .map(|tracker| {
                     tokio::spawn(async move {
-                        // TODO: fix this
                         let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap();
-                        tracker.connect(socket, info_hash).await
+                        tracker.announce(socket, info_hash).await
                     })
                 })
                 .collect();
@@ -198,8 +210,8 @@ impl DownloadSources {
                 .for_each_concurrent(None, |connection| async move {
                     match connection {
                         Ok(Ok(_)) => {}
-                        Ok(Err(e)) => error!("{}", e.to_string().red()),
-                        Err(e) => error!("{}", e.to_string().red()),
+                        Ok(Err(e)) => error!("{}", e.to_string()),
+                        Err(e) => error!("{}", e.to_string()),
                     }
                 })
                 .await;
@@ -218,7 +230,7 @@ impl DownloadSources {
                             i += 1;
                             let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap();
 
-                            match tracker.connect(socket, info_hash).await {
+                            match tracker.announce(socket, info_hash).await {
                                 Ok(_) => {
                                     info!("Connected to : {}", tracker.url());
                                     break;

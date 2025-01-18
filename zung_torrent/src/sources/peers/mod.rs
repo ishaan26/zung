@@ -97,7 +97,7 @@ pub struct PeersList {
 }
 
 impl PeersList {
-    pub fn from_udp_bytes(bytes: &[u8], recv_socket: SocketAddr) -> Result<Self> {
+    pub(crate) fn from_udp_bytes(bytes: &[u8], recv_socket: SocketAddr) -> Result<Self> {
         if recv_socket.is_ipv4() {
             Ok(PeersList {
                 peers: Some(PeersV4::from_bytes(bytes)?),

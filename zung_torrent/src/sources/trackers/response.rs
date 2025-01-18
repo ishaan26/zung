@@ -8,33 +8,51 @@ use crate::sources::peers::PeersList;
 
 use super::Action;
 
+/// Represents the response received from a torrent tracker.
+///
+/// A `TrackerResponse` encapsulates the state returned by the tracker, which may include a list of
+/// peers and other relevant metadata. It supports both HTTP and UDP tracker protocols, as well as
+/// an empty state indicating no response has been received yet.
 #[derive(Debug)]
 pub struct TrackerResponse {
     pub(crate) state: TrackerResponseState,
 }
 
 impl TrackerResponse {
-    pub fn empty() -> Self {
+    /// Creates an empty tracker response.
+    pub(crate) fn empty() -> Self {
         TrackerResponse {
             state: TrackerResponseState::Empty,
         }
     }
 
+    /// Retrieves the current state of the tracker response.
     pub(crate) fn state(&self) -> &TrackerResponseState {
         &self.state
     }
 
-    pub fn get_peers(&self) -> Option<&PeersList> {
+    /// Returns a referece to the list of peers contained in a tracker response (if the tracker has
+    /// bothered to provide such a thing... Man torrent protocol is WILD!)
+    pub fn get_peers_list(&self) -> Option<&PeersList> {
         match &self.state() {
-            TrackerResponseState::Http(http_tracker_response) => {
-                http_tracker_response.peers.as_ref()
-            }
-            TrackerResponseState::Udp(udp_tracker_response) => udp_tracker_response.peers.as_ref(),
+            TrackerResponseState::Http(http) => http.peers.as_ref(),
+            TrackerResponseState::Udp(udp) => udp.peers.as_ref(),
             TrackerResponseState::Empty => None,
         }
     }
 
-    pub fn is_empty(&self) -> bool {
+    /// Checks if the Tracker has responded with any peers.
+    pub fn containes_peers(&self) -> bool {
+        match &self.state() {
+            TrackerResponseState::Http(http) => http.peers.is_some(),
+            TrackerResponseState::Udp(udp) => udp.peers.is_some(),
+            TrackerResponseState::Empty => false,
+        }
+    }
+
+    /// Checks if the tracker response is uninitialized, meaning that the tracker has not been
+    /// connected to yet.
+    pub fn is_uninitialized(&self) -> bool {
         matches!(self.state(), &TrackerResponseState::Empty)
     }
 }
@@ -53,6 +71,10 @@ pub(crate) enum TrackerResponseState {
     Empty,
 }
 
+/// Represents an HTTP tracker response.
+///
+/// This structure is used to deserialize responses from an HTTP tracker. The response may include
+/// various fields such as errors, warnings, intervals, and peer information.
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 pub struct HttpTrackerResponse {
@@ -85,15 +107,24 @@ pub struct HttpTrackerResponse {
     pub(crate) peers: Option<PeersList>,
 }
 
-// Offset      Size            Name            Value
-// 0           32-bit integer  action          1 // announce
-// 4           32-bit integer  transaction_id
-// 8           32-bit integer  interval
-// 12          32-bit integer  leechers
-// 16          32-bit integer  seeders
-// 20 + 6 * n  32-bit integer  IP address
-// 24 + 6 * n  16-bit integer  TCP port
-// 20 + 6 * N
+/// Represents a UDP tracker response.
+///
+/// This structure is used to parse and handle responses from a UDP tracker. The response includes
+/// fields such as action type, transaction ID, intervals, and peer information.
+///
+/// Th response is structured as follows:
+///
+/// ```text
+/// Offset      Size            Name            Value
+/// 0           32-bit integer  action          1 // announce
+/// 4           32-bit integer  transaction_id
+/// 8           32-bit integer  interval
+/// 12          32-bit integer  leechers
+/// 16          32-bit integer  seeders
+/// 20 + 6 * n  32-bit integer  IP address
+/// 24 + 6 * n  16-bit integer  TCP port
+/// 20 + 6 * N
+/// ```
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct UdpTrackerResponse {

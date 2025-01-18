@@ -90,9 +90,7 @@ impl TorrentArgs {
 
                 if let Some(list) = torrent.sources().tracker_list() {
                     for t in list {
-                        if t.is_connected() {
-                            println!("{} -> {}", t.trys(), t.url().cyan());
-                        }
+                        dbg!(t);
                     }
                 }
             }
