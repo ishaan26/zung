@@ -10,7 +10,7 @@ use std::{
 use anyhow::{bail, Result};
 use serde::{de::Visitor, Deserialize, Serialize, Serializer};
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Peer {
     addr: SocketAddr,
     connected: Arc<AtomicBool>,
@@ -30,6 +30,15 @@ impl Peer {
 
     pub fn is_connected(&self) -> bool {
         self.connected.load(Ordering::Relaxed)
+    }
+}
+
+impl Clone for Peer {
+    fn clone(&self) -> Self {
+        Self {
+            addr: self.addr,
+            connected: Arc::clone(&self.connected),
+        }
     }
 }
 
@@ -90,7 +99,6 @@ impl From<SocketAddrV6> for Peer {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct PeersList {
     peers: Option<PeersV4>,
     peers6: Option<PeersV6>,
@@ -148,10 +156,65 @@ impl PeersList {
 
         v4_len + v6_len
     }
+
+    pub fn iter(&self) -> PeersIter<'_> {
+        PeersIter::new(self)
+    }
+}
+
+pub struct PeersIter<'a> {
+    v4_iter: Option<std::slice::Iter<'a, Peer>>,
+    v6_iter: Option<std::slice::Iter<'a, Peer>>,
+}
+
+impl<'a> PeersIter<'a> {
+    fn new(list: &'a PeersList) -> Self {
+        PeersIter {
+            v4_iter: list.peers.as_ref().map(|p| p.0.iter()),
+            v6_iter: list.peers6.as_ref().map(|p| p.0.iter()),
+        }
+    }
+}
+
+impl<'a> Iterator for PeersIter<'a> {
+    type Item = &'a Peer;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.v4_iter.as_mut().and_then(|v4| v4.next()).or_else(|| {
+            if let Some(ref mut v4) = self.v4_iter {
+                if v4.len() == 0 {
+                    self.v4_iter = None;
+                }
+            }
+            self.v6_iter.as_mut().and_then(|v6| v6.next())
+        })
+    }
+}
+
+impl ExactSizeIterator for PeersIter<'_> {}
+
+impl<'a> IntoIterator for &'a PeersList {
+    type Item = &'a Peer;
+    type IntoIter = PeersIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        Self::IntoIter::new(self)
+    }
+}
+
+impl IntoIterator for PeersList {
+    type Item = Peer;
+    type IntoIter = std::iter::Chain<std::vec::IntoIter<Peer>, std::vec::IntoIter<Peer>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let v4_iter = self.peers.map(|v4| v4.0).unwrap_or_default().into_iter();
+        let v6_iter = self.peers6.map(|v6| v6.0).unwrap_or_default().into_iter();
+        v4_iter.chain(v6_iter)
+    }
 }
 
 #[derive(Debug)]
-pub struct PeersV4(Vec<Peer>);
+struct PeersV4(Vec<Peer>);
 
 impl PeersV4 {
     fn from_bytes(bytes: &[u8]) -> Result<Self> {
@@ -216,7 +279,7 @@ impl Serialize for PeersV4 {
 }
 
 #[derive(Debug, Clone)]
-pub struct PeersV6(Vec<Peer>);
+struct PeersV6(Vec<Peer>);
 
 impl PeersV6 {
     fn from_bytes(bytes: &[u8]) -> Result<Self> {
@@ -377,6 +440,45 @@ mod tests {
                     0
                 )),
             ]
+        );
+    }
+
+    #[test]
+    fn test_peers_list_iter() {
+        let tracker_peers = PeersList {
+            peers: Some(PeersV4::from_bytes(BYTES_V4).unwrap()),
+            peers6: Some(PeersV6::from_bytes(BYTES_V6).unwrap()),
+        };
+
+        let mut iter = tracker_peers.iter();
+
+        // First v4
+        assert_eq!(
+            iter.next(),
+            Some(&Peer::from(SocketAddrV4::new(
+                Ipv4Addr::new(192, 168, 1, 1),
+                8080
+            )))
+        );
+
+        // Second v4
+        assert_eq!(
+            iter.next(),
+            Some(&Peer::from(SocketAddrV4::new(
+                Ipv4Addr::new(192, 168, 1, 2),
+                9000
+            )))
+        );
+
+        // First v6
+        assert_eq!(
+            iter.next(),
+            Some(&Peer::from(SocketAddrV6::new(
+                Ipv6Addr::new(0x2001, 0x0DB8, 0x85A3, 0x0000, 0x0000, 0x8A2E, 0x0370, 0x7334),
+                8080,
+                0,
+                0
+            )))
         );
     }
 }

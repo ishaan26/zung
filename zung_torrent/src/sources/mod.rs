@@ -258,23 +258,25 @@ impl DownloadSources {
         }
     }
 
-    pub fn peers_list(&self) -> Result<HashSet<Peer>> {
+    pub fn peers_list(&self) -> HashSet<Peer> {
         match self {
             DownloadSources::Trackers { tracker_list }
             | DownloadSources::Hybrid { tracker_list, .. } => {
                 let mut list = HashSet::new();
 
                 for tracker in tracker_list {
-                    if let Ok(peers) = tracker.peers_list() {
+                    if let Some(peers) = tracker.get_response_guarded().get_peers_list() {
                         for peer in peers {
-                            list.insert(peer);
+                            if list.insert(peer.clone()) {
+                                peer.set_connected();
+                            }
                         }
                     }
                 }
 
-                Ok(list)
+                list
             }
-            DownloadSources::HttpSeeders { .. } => Ok(HashSet::new()),
+            DownloadSources::HttpSeeders { .. } => HashSet::new(),
         }
     }
 }

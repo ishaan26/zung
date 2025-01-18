@@ -17,8 +17,6 @@ use tokio::net::UdpSocket;
 
 use crate::meta_info::InfoHashEncoded;
 
-use super::peers::Peer;
-
 /// Represents a UDP or HTTP torrent tracker.
 ///
 /// A torrent tracker is web service which responds to HTTP GET requests or UDP requests basesd on
@@ -145,18 +143,6 @@ impl Tracker {
 
     pub fn get_response_guarded(&self) -> MutexGuard<'_, TrackerResponse> {
         self.inner.response.lock()
-    }
-
-    pub fn peers_list(&self) -> Result<Vec<Peer>> {
-        if !self.is_connected() {
-            bail!("Peers list cannot be generated on an unconnected tracker")
-        }
-
-        if let Some(list) = self.get_response_guarded().get_peers_list() {
-            Ok(list.to_vec())
-        } else {
-            bail!("No peers in the Tracker")
-        }
     }
 
     pub fn url(&self) -> &str {

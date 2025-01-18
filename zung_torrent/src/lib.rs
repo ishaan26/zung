@@ -86,12 +86,10 @@ impl TorrentArgs {
                     }
                 }
 
-                torrent.sources().retry_connect_all(info_hash).await;
+                // torrent.sources().retry_connect_all(info_hash).await;
 
-                if let Some(list) = torrent.sources().tracker_list() {
-                    for t in list {
-                        dbg!(t);
-                    }
+                for t in torrent.sources().peers_list() {
+                    dbg!(t);
                 }
             }
         }
