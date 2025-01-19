@@ -86,11 +86,9 @@ impl TorrentArgs {
                     }
                 }
 
-                // torrent.sources().retry_connect_all(info_hash).await;
+                let list = torrent.sources().peers_list();
 
-                for t in torrent.sources().peers_list() {
-                    dbg!(t);
-                }
+                dbg!(list.len());
             }
         }
 

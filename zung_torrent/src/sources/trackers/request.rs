@@ -21,7 +21,7 @@ pub const UDP_PROTOCOL_ID: i64 = 0x41727101980; // Magic torrent number. DNC!
 pub const UDP_TRANSACTION_ID: i32 = 696969;
 const MIN_UDP_RESPONSE_SIZE: usize = 20;
 
-pub const REQUEST_TIMEOUT_DURATION: Duration = Duration::from_secs(10);
+pub const REQUEST_TIMEOUT_DURATION: Duration = Duration::from_secs(5);
 
 /// Represents different types of BitTorrent tracker requests.
 ///

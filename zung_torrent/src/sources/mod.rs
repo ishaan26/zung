@@ -9,15 +9,16 @@ pub mod http_seeders;
 pub mod peers;
 pub mod trackers;
 
-use std::{collections::HashSet, net::Ipv4Addr};
+use std::collections::HashSet;
 
+use colored::Colorize;
 use futures::{stream::FuturesUnordered, StreamExt};
 
 use anyhow::Result;
 use peers::Peer;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use tokio::{net::UdpSocket, task::JoinHandle};
-use tracing::{error, info};
+use tokio::task::JoinHandle;
+use tracing::{info, instrument, warn};
 
 use crate::meta_info::{InfoHashEncoded, MetaInfo};
 use http_seeders::{HttpSeeder, HttpSeederList};
@@ -193,15 +194,24 @@ impl DownloadSources {
     }
 
     /// Announce to all trackers in the torrent
+    #[instrument(skip_all)]
     pub async fn announce_all(&self, info_hash: InfoHashEncoded) {
         if let Some(list) = self.tracker_list() {
-            let futures: FuturesUnordered<JoinHandle<Result<()>>> = list
+            let futures: FuturesUnordered<JoinHandle<Result<Tracker>>> = list
                 .iter()
                 .cloned() // This performs an arc clone on the interal type.
-                .map(|tracker| {
+                .map(|tracker| -> JoinHandle<Result<Tracker>> {
                     tokio::spawn(async move {
-                        let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap();
-                        tracker.announce(socket, info_hash).await
+                        for _ in 0..10 {
+                            match tracker.announce(info_hash).await {
+                                Ok(_) => return Ok(tracker),
+                                Err(e) => {
+                                    warn!("{}: {}", tracker.url().italic(), e.to_string());
+                                    continue;
+                                }
+                            }
+                        }
+                        Ok(tracker)
                     })
                 })
                 .collect();
@@ -209,13 +219,26 @@ impl DownloadSources {
             futures
                 .for_each_concurrent(None, |connection| async move {
                     match connection {
-                        Ok(Ok(_)) => {}
-                        Ok(Err(e)) => error!("{}", e.to_string()),
-                        Err(e) => error!("{}", e.to_string()),
+                        Ok(Ok(t)) => info!("Connected! {}", t.url()),
+                        Ok(Err(e)) => warn!("{}", e.to_string()),
+                        Err(e) => warn!("{}", e.to_string()),
                     }
                 })
                 .await;
         }
+    }
+
+    pub async fn announce_all_loop(&self, info_hash: InfoHashEncoded) {
+        self.announce_all(info_hash).await;
+
+        let mut futures: FuturesUnordered<_> = (0..10)
+            .map(|i| async move {
+                dbg!(i);
+                self.announce_all(info_hash).await;
+            })
+            .collect();
+
+        while futures.next().await.is_some() {}
     }
 
     pub async fn retry_connect_all(&self, info_hash: InfoHashEncoded) {
@@ -228,9 +251,8 @@ impl DownloadSources {
                         let mut i = 0;
                         loop {
                             i += 1;
-                            let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap();
 
-                            match tracker.announce(socket, info_hash).await {
+                            match tracker.announce(info_hash).await {
                                 Ok(_) => {
                                     info!("Connected to : {}", tracker.url());
                                     break;

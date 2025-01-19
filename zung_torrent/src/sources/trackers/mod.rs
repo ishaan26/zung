@@ -8,6 +8,7 @@ pub use request::*;
 mod response;
 pub use response::*;
 
+use std::net::Ipv4Addr;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 
@@ -38,6 +39,7 @@ struct TrackerInner {
     request: Mutex<TrackerRequest>,
     response: Mutex<TrackerResponse>,
     connected: AtomicBool,
+    state: AtomicBool,
     trys: AtomicU32,
 }
 
@@ -62,6 +64,7 @@ impl Tracker {
             request: Mutex::new(TrackerRequest::empty()),
             response: Mutex::new(TrackerResponse::empty()),
             connected: AtomicBool::new(false),
+            state: AtomicBool::new(false),
             trys: AtomicU32::new(0),
         };
 
@@ -82,11 +85,7 @@ impl Tracker {
     /// - This is not intended to be used as an end user of this library. Please see
     ///   [`announce`](Tracker::announce) method instead which internally performs this function. This
     ///   method is only useful if you are a big torrent nerd.
-    pub async fn tracker_request(
-        &self,
-        socket: UdpSocket,
-        info_hash: InfoHashEncoded,
-    ) -> Result<TrackerRequest> {
+    pub async fn tracker_request(&self, info_hash: InfoHashEncoded) -> Result<TrackerRequest> {
         match &self.url {
             TrackerUrl::Http(url) => Ok(TrackerRequest {
                 state: TrackerRequestState::Http {
@@ -97,6 +96,8 @@ impl Tracker {
             TrackerUrl::Udp(url) => {
                 let udp_url = url.strip_prefix("udp://").unwrap();
                 let udp_url = udp_url.split_once('/').map(|url| url.0).unwrap_or(udp_url);
+
+                let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap();
 
                 let connection = UdpConnectRequest::new()
                     .connect_with(udp_url, &socket)
@@ -125,18 +126,21 @@ impl Tracker {
     /// # Parameters
     /// - `socket`: An `Arc` to a `UdpSocket` used for communication.
     /// - `info_hash`: The encoded info hash for the torrent.
-    pub async fn announce(&self, socket: UdpSocket, info_hash: InfoHashEncoded) -> Result<()> {
+    pub async fn announce(&self, info_hash: InfoHashEncoded) -> Result<()> {
+        self.inner.state.store(true, Ordering::Relaxed);
         self.inner.trys.fetch_add(1, Ordering::SeqCst);
 
-        let request = self.tracker_request(socket, info_hash).await?;
+        let request = self.tracker_request(info_hash).await?;
 
         // Make the HTTP or UDP request to recive a TrackerResponse
-        let response = request.announce().await?;
 
+        let response = request.announce().await?;
         self.inner.connected.store(true, Ordering::Relaxed);
 
         self.set_request(request)?;
+
         self.set_response(response)?;
+        self.inner.state.store(false, Ordering::Relaxed);
 
         Ok(())
     }
@@ -151,6 +155,10 @@ impl Tracker {
 
     pub fn is_connected(&self) -> bool {
         self.inner.connected.load(Ordering::Relaxed)
+    }
+
+    pub fn is_processing(&self) -> bool {
+        self.inner.state.load(Ordering::Relaxed)
     }
 
     pub fn trys(&self) -> u32 {
@@ -214,7 +222,6 @@ impl TrackerUrl {
 
 #[cfg(test)]
 mod tracker_tests {
-    use std::net::Ipv4Addr;
 
     use super::*;
     use crate::meta_info::InfoHash;
@@ -224,9 +231,8 @@ mod tracker_tests {
     async fn test_tracker_request_creation() {
         let sample_url = "http://example.com/announce";
         let info_hash = InfoHash::new(b"test info_hash").as_encoded();
-        let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap();
         let tracker = Tracker::new(sample_url);
-        let tracker_request = tracker.tracker_request(socket, info_hash).await.unwrap();
+        let tracker_request = tracker.tracker_request(info_hash).await.unwrap();
 
         match tracker_request.state() {
             TrackerRequestState::Http { url, params } => {
@@ -252,9 +258,8 @@ mod tracker_tests {
     async fn test_tracker_request_to_url() {
         let url = "http://example.com/announce";
         let info_hash = InfoHash::new(b"test info_hash").as_encoded();
-        let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap();
         let tracker = Tracker::new(url);
-        let tracker_request = tracker.tracker_request(socket, info_hash).await.unwrap();
+        let tracker_request = tracker.tracker_request(info_hash).await.unwrap();
 
         // Generate the URL with query parameters
         let generated_url = tracker_request.to_url().unwrap();
@@ -279,9 +284,8 @@ mod tracker_tests {
     async fn test_bool_as_int_serialization() {
         let url = "http://example.com/announce";
         let info_hash = InfoHash::new(b"test info_hash").as_encoded();
-        let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap();
         let tracker = Tracker::new(url);
-        let mut tracker_request = tracker.tracker_request(socket, info_hash).await.unwrap();
+        let mut tracker_request = tracker.tracker_request(info_hash).await.unwrap();
 
         match &mut tracker_request.state {
             TrackerRequestState::Http { params, .. } => {
@@ -319,13 +323,9 @@ mod tracker_tests {
     async fn test_optional_parameters() {
         let url = "http://example.com/announce";
         let info_hash = InfoHash::new(b"test info_hash").as_encoded();
-        let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap();
         let tracker_request = Tracker::new(url);
 
-        let mut tracker_request = tracker_request
-            .tracker_request(socket, info_hash)
-            .await
-            .unwrap();
+        let mut tracker_request = tracker_request.tracker_request(info_hash).await.unwrap();
 
         match &mut tracker_request.state {
             TrackerRequestState::Http { params, .. } => {

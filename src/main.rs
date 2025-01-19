@@ -105,7 +105,7 @@ fn set_subscribers() {
         tracing_subscriber::fmt()
             // all spans/events with a level higher than TRACE (e.g, info, warn, etc.)
             // will be written to stdout.
-            .with_env_filter("zung=debug")
+            .with_env_filter("zung=info")
             .without_time()
             .compact()
             // display source code file paths
