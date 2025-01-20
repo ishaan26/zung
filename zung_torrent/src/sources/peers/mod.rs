@@ -25,6 +25,7 @@ use std::{
 use anyhow::{bail, Result};
 use serde::{de::Visitor, Deserialize, Serialize, Serializer};
 
+/// Reprasents a single peer within the [`PeersList`]
 #[derive(Debug)]
 pub struct Peer {
     addr: SocketAddr,
@@ -123,7 +124,7 @@ impl From<SocketAddrV6> for Peer {
 /// # Examples
 ///
 /// ```
-/// TODO: update examples when the Client API is finalized.
+/// //  TODO: update examples when the Client API is finalized.
 /// ```
 ///
 /// # NOTES
