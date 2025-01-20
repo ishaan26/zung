@@ -7,10 +7,9 @@ use human_bytes::human_bytes;
 use zung_parsers::bencode;
 
 use std::{
-    cell::OnceCell,
     fmt::Display,
     path::Path,
-    sync::{Arc, LazyLock},
+    sync::{Arc, LazyLock, OnceLock},
     thread,
 };
 
@@ -29,7 +28,7 @@ pub struct Client {
     file_name: String,
     info_hash: InfoHash,
     peer_id: PeerID,
-    num_files: OnceCell<usize>, // Cache no. of files.
+    num_files: OnceLock<usize>, // Cache no. of files.
     sources: DownloadSources,
 }
 
@@ -99,7 +98,7 @@ impl Client {
                 file_name,
                 info_hash,
                 peer_id: *PEER_ID,
-                num_files: OnceCell::new(),
+                num_files: OnceLock::new(),
                 sources,
             })
         } else {
