@@ -7,9 +7,10 @@ use human_bytes::human_bytes;
 use zung_parsers::bencode;
 
 use std::{
+    cell::OnceCell,
     fmt::Display,
     path::Path,
-    sync::{Arc, LazyLock, OnceLock},
+    sync::{Arc, LazyLock},
     thread,
 };
 
@@ -28,7 +29,7 @@ pub struct Client {
     file_name: String,
     info_hash: InfoHash,
     peer_id: PeerID,
-    num_files: OnceLock<usize>, // Cache no. of files.
+    num_files: OnceCell<usize>, // Cache no. of files.
     sources: DownloadSources,
 }
 
@@ -64,22 +65,23 @@ impl Client {
         if let Some(file_name) = file.as_ref().file_name() {
             let file_name = file_name.to_string_lossy().to_string();
 
-            let file = std::fs::read(file).expect("Unable to read the provided file");
+            let file = Arc::new(std::fs::read(file).expect("Unable to read the provided file"));
 
-            let value = bencode::parse(&file)?;
-
+            let file_clone = Arc::clone(&file);
             let meta_info = thread::spawn(move || {
-                MetaInfo::from_bytes(&file).expect("Invalid torrent file provided")
+                MetaInfo::from_bytes(file_clone.as_ref()).expect("Invalid torrent file provided")
             });
 
-            let info = thread::spawn(move || {
+            let info = thread::spawn(move || -> Result<InfoHash> {
+                let value = bencode::parse(file.as_ref())?;
+
                 let info = value
                     .get_from_dictionary("info")
                     .expect("Invalid Torrent File - No info dictionary provided");
 
                 let info = bencode::to_bytes(info).expect("Failed to calculate the info hash");
 
-                InfoHash::new(&info)
+                Ok(InfoHash::new(&info))
             });
 
             let meta_info = meta_info
@@ -88,7 +90,7 @@ impl Client {
 
             let meta_info = Arc::new(meta_info);
 
-            let info_hash = info.join().expect("Unable to calculate infohash");
+            let info_hash = info.join().expect("Unable to calculate infohash")?;
 
             let sources = DownloadSources::new(&meta_info);
 
@@ -97,7 +99,7 @@ impl Client {
                 file_name,
                 info_hash,
                 peer_id: *PEER_ID,
-                num_files: OnceLock::new(),
+                num_files: OnceCell::new(),
                 sources,
             })
         } else {

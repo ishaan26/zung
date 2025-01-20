@@ -75,16 +75,17 @@ impl Tracker {
     }
 
     /// Constructs the [`TrackerRequest`] which then allows you to
-    /// [`announce`](TrackerRequest::announce) to the subject [`Tracker`].
+    /// [`announce`](Tracker::announce) to the subject [`Tracker`].
     ///
-    /// # Note
+    /// # NOTES
+    ///
+    /// - *This is not intended to be used as an end user of this library*. Please see
+    ///   [`announce`](Tracker::announce) method instead which internally performs this function. This
+    ///   method is only useful if you are a big torrent nerd.
     ///
     /// - In case the Tracker contains a Udp url, this will perform the [`UdpConnectRequest`] (see
     ///   its documentation for more information) to obtain the `connection_id` from the tracker.
     ///
-    /// - This is not intended to be used as an end user of this library. Please see
-    ///   [`announce`](Tracker::announce) method instead which internally performs this function. This
-    ///   method is only useful if you are a big torrent nerd.
     pub async fn tracker_request(&self, info_hash: InfoHashEncoded) -> Result<TrackerRequest> {
         match &self.url {
             TrackerUrl::Http(url) => Ok(TrackerRequest {
@@ -118,21 +119,18 @@ impl Tracker {
         }
     }
 
-    /// Connects to the tracker and updates its state.     
+    /// Sends an announce request to a tracker and updates its state.     
     ///
     /// This method sends a request to the tracker (via HTTP or UDP) to retrieve the response.
     /// The response is then stored in the tracker's state for later use.
     ///
     /// # Parameters
-    /// - `socket`: An `Arc` to a `UdpSocket` used for communication.
     /// - `info_hash`: The encoded info hash for the torrent.
     pub async fn announce(&self, info_hash: InfoHashEncoded) -> Result<()> {
         self.inner.state.store(true, Ordering::Relaxed);
         self.inner.trys.fetch_add(1, Ordering::SeqCst);
 
         let request = self.tracker_request(info_hash).await?;
-
-        // Make the HTTP or UDP request to recive a TrackerResponse
 
         let response = request.announce().await?;
         self.inner.connected.store(true, Ordering::Relaxed);
@@ -184,7 +182,7 @@ impl Tracker {
 
 // TODO: Look into SmallStr
 #[derive(Debug)]
-pub enum TrackerUrl {
+enum TrackerUrl {
     Http(Arc<str>),
     Udp(Arc<str>),
     Invalid(Arc<str>),
@@ -201,7 +199,7 @@ impl Clone for TrackerUrl {
 }
 
 impl TrackerUrl {
-    pub fn new(tracker_url: &str) -> Self {
+    fn new(tracker_url: &str) -> Self {
         if tracker_url.starts_with("http") {
             Self::Http(Arc::from(tracker_url))
         } else if tracker_url.starts_with("udp") {
@@ -211,7 +209,7 @@ impl TrackerUrl {
         }
     }
 
-    pub fn url(&self) -> &str {
+    fn url(&self) -> &str {
         match self {
             TrackerUrl::Http(s) => s,
             TrackerUrl::Udp(s) => s,

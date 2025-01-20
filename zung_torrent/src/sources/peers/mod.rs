@@ -1,3 +1,18 @@
+//! Provides functionality for managing and iterating over IPv4 and IPv6 peers.
+//!
+//! Peers refer to the number of users that have the file and are seeding (sharing). If the torrent
+//! file has a healthy number of peers, it should result in faster and more reliable file transfer
+//! and a quality streaming experience. If your torrent file has zero or few peers (i.e., few
+//! people are sharing the file), you may experience buffering, or may not be able to view the file
+//! at all.
+//!
+//! To monitor the number of peers after you have started a torrent stream, look to the bottom of
+//! the player window and count the number of active peers (seeders). If you run into problems with
+//! the quality of the stream, or the media cannot play at all, it may be due to a low number of
+//! peers, or no peers at all. If this is the case, try to find a different torrent file or keep
+//! the existing torrent file and try again later. You might find that more seeders come online,
+//! and the file becomes more available to stream.
+
 use std::{
     hash::Hash,
     net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
@@ -24,10 +39,12 @@ impl Peer {
         }
     }
 
+    /// Sets the peer state to`connected`.
     pub fn set_connected(&self) {
         self.connected.store(true, Ordering::Relaxed);
     }
 
+    /// Check if the peer is connected or not.
     pub fn is_connected(&self) -> bool {
         self.connected.load(Ordering::Relaxed)
     }
@@ -98,6 +115,31 @@ impl From<SocketAddrV6> for Peer {
     }
 }
 
+/// The list of network peers as recieved from a tracker in a [`TrackerResponse`].
+///
+/// This type is automatically generated when [`TrackerResponse`] is initialized for a [`Tracker`]
+/// while using the [`announce`] method on the [`Tracker`].
+///
+/// # Examples
+///
+/// ```
+/// TODO: update examples when the Client API is finalized.
+/// ```
+///
+/// # NOTES
+///
+/// A [`TrackerResponse`] can contain peers with both IPv4 and IPv6 addresses. Therefore this type
+/// provides a unified interface for working with peers across different IP versions. It supports
+/// iteration over peers in both borrowed and owned contexts, automatically handling the transition
+/// between IPv4 and IPv6 peers.
+///
+/// The iterator implementations are designed to be zero-cost, with no allocation overhead when
+/// iterating. Both borrowed and owned iteration use efficient standard library iterators
+/// internally.
+///
+/// [`TrackerResponse`]: crate::sources::trackers::TrackerResponse
+/// [`Tracker`]: crate::sources::trackers::Tracker
+/// [`announce`]: crate::sources::trackers::Tracker::announce
 #[derive(Debug, Deserialize)]
 pub struct PeersList {
     peers: Option<PeersV4>,

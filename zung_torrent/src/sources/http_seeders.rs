@@ -1,3 +1,22 @@
+//! Provides functionality to interact with HTTP seeders (also known as "web seeds").
+//!
+//! HTTP seeders (also known as "web seeds") in BitTorrent are alternative sources for downloading
+//! torrent data directly from web servers using HTTP/HTTPS, rather than from P2P peers. They were
+//! introduced to ensure availability of torrents even when there are few or no regular peers.
+//!
+//! HTTP seeding comes in several variations, each suited to different use cases. The original
+//! GetRight-style web seeding allows standard web servers to serve complete files. The more
+//! sophisticated HTTP/FTP seeding specification (BEP 19) enables servers to serve individual
+//! pieces of files, matching the granular nature of BitTorrent's peer-to-peer transfers. A third
+//! variant, Metalink (BEP 49), provides a way to specify multiple HTTP sources for the same
+//! content.
+//!
+//! HTTP seeders are defined in the torrent metadata using either the "url-list" or "httpseeds"
+//! keys. Unlike regular peers who must maintain complex BitTorrent protocol states and participate
+//! in piece selection and trading algorithms, HTTP seeders simply respond to standard HTTP
+//! requests. This simplicity makes them easier to implement and maintain, though it comes at the
+//! cost of the bandwidth efficiency that makes peer-to-peer networks so powerful.
+
 use std::ops::Deref;
 
 use crate::meta_info::{FileAttr, Files, MetaInfo};

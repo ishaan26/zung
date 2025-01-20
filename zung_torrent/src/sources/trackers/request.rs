@@ -39,8 +39,6 @@ pub const REQUEST_TIMEOUT_DURATION: Duration = Duration::from_secs(5);
 /// - The `url` fields are stored as `Arc<str>` for efficient sharing and minimal memory overhead
 /// - UDP requests maintain their own socket connection through `Arc<UdpSocket>`
 /// - The `Empty` variant can be used as a placeholder or to represent an invalid state
-///
-
 #[derive(Debug)]
 pub struct TrackerRequest {
     pub(crate) state: TrackerRequestState,
@@ -132,7 +130,7 @@ impl TrackerRequest {
 
     /// Makes the Tracker request and retunrs the Tracker Response.
     #[instrument(skip_all, name = "Tracker Request")]
-    pub async fn announce(&self) -> Result<TrackerResponse> {
+    pub(crate) async fn announce(&self) -> Result<TrackerResponse> {
         match &self.state() {
             // HTTP request wherein response is recieved as a bencode dictionary.
             TrackerRequestState::Http { .. } => {
