@@ -130,7 +130,7 @@ impl TrackerRequest {
 
     /// Makes the Tracker request and retunrs the Tracker Response.
     #[instrument(skip_all, name = "Tracker Request")]
-    pub(crate) async fn announce(&self) -> Result<TrackerResponse> {
+    pub(crate) async fn make_announce_request(&self) -> Result<TrackerResponse> {
         match &self.state() {
             // HTTP request wherein response is recieved as a bencode dictionary.
             TrackerRequestState::Http { .. } => {

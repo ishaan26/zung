@@ -40,6 +40,10 @@ impl Peer {
         }
     }
 
+    pub fn get_addr(&self) -> SocketAddr {
+        self.addr
+    }
+
     /// Sets the peer state to`connected`.
     pub fn set_connected(&self) {
         self.connected.store(true, Ordering::Relaxed);

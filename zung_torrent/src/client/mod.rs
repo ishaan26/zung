@@ -15,7 +15,7 @@ use std::{
 
 use crate::{
     meta_info::{FileTree, InfoHash, SortOrd},
-    sources::{http_seeders::HttpSeederList, trackers::Tracker, DownloadSources},
+    sources::{http_seeders::HttpSeedersList, trackers::Tracker, DownloadSources},
     MetaInfo,
 };
 
@@ -373,7 +373,7 @@ impl Client {
         }
 
         #[inline]
-        fn print_http_seeders(http_seeder_list: &HttpSeederList) {
+        fn print_http_seeders(http_seeder_list: &HttpSeedersList) {
             print_header("HTTP Seeders");
             for (mut i, http) in http_seeder_list.iter().enumerate() {
                 i += 1;
@@ -387,7 +387,7 @@ impl Client {
 
         match self.sources() {
             DownloadSources::Trackers { tracker_list } => {
-                print_trackers(tracker_list);
+                print_trackers(tracker_list.get_list());
             }
             DownloadSources::HttpSeeders { http_seeder_list } => {
                 print_http_seeders(http_seeder_list);
@@ -396,7 +396,7 @@ impl Client {
                 tracker_list,
                 http_seeder_list,
             } => {
-                print_trackers(tracker_list);
+                print_trackers(tracker_list.get_list());
                 print_http_seeders(http_seeder_list);
             }
         }

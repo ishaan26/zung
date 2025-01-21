@@ -81,7 +81,6 @@ fn set_subscribers() {
     // For tokio console.
     // {
     //     use tracing_subscriber::prelude::*;
-    //     use tracing_subscriber::EnvFilter;
     //
     //     // spawn the console server in the background,
     //     // returning a `Layer`:

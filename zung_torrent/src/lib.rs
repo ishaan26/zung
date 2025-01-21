@@ -76,7 +76,7 @@ impl TorrentArgs {
 
                 let info_hash = torrent.info_hash().as_encoded();
 
-                torrent.sources().announce_all(info_hash).await;
+                torrent.sources().connect(info_hash).await?;
 
                 if let Some(list) = torrent.sources().tracker_list() {
                     for t in list {
@@ -86,9 +86,23 @@ impl TorrentArgs {
                     }
                 }
 
-                let list = torrent.sources().peers_list();
+                let total_trackers = torrent
+                    .sources()
+                    .tracker_list()
+                    .unwrap()
+                    .number_of_trackers();
 
-                dbg!(list.len());
+                let connected_trackers = torrent
+                    .sources()
+                    .tracker_list()
+                    .unwrap()
+                    .number_of_connected();
+
+                let peers_list = torrent.sources().peers_list().len();
+
+                dbg!(total_trackers);
+                dbg!(connected_trackers);
+                dbg!(peers_list);
             }
         }
 

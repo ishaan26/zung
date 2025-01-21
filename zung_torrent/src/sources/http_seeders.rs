@@ -22,11 +22,11 @@ use std::ops::Deref;
 use crate::meta_info::{FileAttr, Files, MetaInfo};
 
 #[derive(Debug, Clone)]
-pub struct HttpSeederList {
+pub struct HttpSeedersList {
     http_seeder_list: Vec<(String, HttpSeeder)>,
 }
 
-impl HttpSeederList {
+impl HttpSeedersList {
     pub fn new(http_seeder_list: Vec<(String, HttpSeeder)>) -> Self {
         Self { http_seeder_list }
     }
@@ -36,7 +36,7 @@ impl HttpSeederList {
     }
 }
 
-impl Deref for HttpSeederList {
+impl Deref for HttpSeedersList {
     type Target = [(String, HttpSeeder)];
 
     fn deref(&self) -> &Self::Target {
