@@ -212,7 +212,7 @@ impl DownloadSources {
 
                 for tracker in tracker_list {
                     if let Some(peers) = tracker.get_response_guarded().get_peers_list() {
-                        for peer in peers {
+                        for peer in peers.iter() {
                             if list.insert(peer.clone()) {
                                 peer.set_connected();
                             }

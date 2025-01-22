@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 
 use anyhow::Result;
 use bytes::{Buf, BytesMut};
@@ -16,6 +16,7 @@ use super::Action;
 #[derive(Debug)]
 pub struct TrackerResponse {
     pub(crate) state: TrackerResponseState,
+    pub(crate) peers: Option<Arc<PeersList>>,
 }
 
 impl TrackerResponse {
@@ -23,6 +24,7 @@ impl TrackerResponse {
     pub(crate) fn empty() -> Self {
         TrackerResponse {
             state: TrackerResponseState::Empty,
+            peers: None,
         }
     }
 
@@ -33,12 +35,8 @@ impl TrackerResponse {
 
     /// Returns a referece to the list of peers contained in a tracker response (if the tracker has
     /// bothered to provide such a thing... Man torrent protocol is WILD!)
-    pub fn get_peers_list(&self) -> Option<&PeersList> {
-        match &self.state() {
-            TrackerResponseState::Http(http) => http.peers.as_ref(),
-            TrackerResponseState::Udp(udp) => udp.peers.as_ref(),
-            TrackerResponseState::Empty => None,
-        }
+    pub fn get_peers_list(&self) -> Option<Arc<PeersList>> {
+        self.peers.as_ref().map(Arc::clone)
     }
 
     /// Checks if the Tracker has responded with any peers.
@@ -133,7 +131,7 @@ pub struct UdpTrackerResponse {
     interval: i32,
     leechers: i32,
     seeders: i32,
-    peers: Option<PeersList>,
+    pub(crate) peers: Option<PeersList>,
 }
 
 impl UdpTrackerResponse {

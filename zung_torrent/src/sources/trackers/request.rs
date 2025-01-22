@@ -147,12 +147,14 @@ impl TrackerRequest {
                 // let response_ohter: bencode::Value = bencode::from_bytes(&response)?;
                 // println!("{response_ohter}");
 
-                let response: HttpTrackerResponse = bencode::from_bytes(&response)?;
-
+                let mut response: HttpTrackerResponse = bencode::from_bytes(&response)?;
                 debug!(url, "Received response");
+
+                let peers = response.peers.take().map(Arc::new);
 
                 Ok(TrackerResponse {
                     state: TrackerResponseState::Http(response),
+                    peers,
                 })
             }
 
@@ -188,7 +190,7 @@ impl TrackerRequest {
 
                 debug!("UDP Tracker Response Recieved");
 
-                let response = UdpTrackerResponse::from_bytes(&response[..rec], socket)?;
+                let mut response = UdpTrackerResponse::from_bytes(&response[..rec], socket)?;
 
                 if response.is_error() {
                     bail!("Server returned an Announce Error: {url}")
@@ -198,8 +200,11 @@ impl TrackerRequest {
                     bail!("Invalid Transaction ID recieved: {url}")
                 }
 
+                let peers = response.peers.take().map(Arc::new);
+
                 Ok(TrackerResponse {
                     state: TrackerResponseState::Udp(response),
+                    peers,
                 })
             }
             TrackerRequestState::Empty => Err(anyhow!("Making Request on empty string")),

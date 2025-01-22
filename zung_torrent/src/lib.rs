@@ -98,11 +98,12 @@ impl TorrentArgs {
                     .unwrap()
                     .number_of_connected();
 
-                let peers_list = torrent.sources().peers_list().len();
+                let peers_list = torrent.sources().peers_list();
 
                 dbg!(total_trackers);
                 dbg!(connected_trackers);
-                dbg!(peers_list);
+                dbg!(peers_list.len());
+                dbg!(torrent.sources().tracker_list());
             }
         }
 

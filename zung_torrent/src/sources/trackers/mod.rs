@@ -41,6 +41,7 @@ impl TrackersList {
             peers: Arc::new(Mutex::new(HashSet::new())),
         }
     }
+
     pub fn get_list(&self) -> &[Tracker] {
         &self.list
     }
@@ -52,6 +53,41 @@ impl TrackersList {
     pub fn number_of_connected(&self) -> u32 {
         self.num_connected.load(Ordering::Relaxed)
     }
+
+    /// Announce to all trackers in the torrent
+    #[instrument(skip_all)]
+    pub async fn connect_all(&self, info_hash: InfoHashEncoded) {
+        let futures = self.announce_loop(info_hash).await;
+
+        futures
+            .for_each_concurrent(None, |connection| async move {
+                match connection.map_err(|e| anyhow!(e)).and_then(|c| c) {
+                    Ok(tracker) => {
+                        info!("Connected! {}", tracker.url());
+                        match self.handshake_loop(tracker).await {
+                            Ok(mut futures) => while (futures.next().await).is_some() {},
+                            Err(e) => warn!("{}", e.to_string()),
+                        }
+                    }
+                    Err(_) => todo!(),
+                }
+            })
+            .await;
+    }
+
+    /// Returns an iterator over the lracker list.
+    ///
+    /// The iterator yields a reference to all [`Tracker`] (s) in the tracker list from start to
+    /// end.
+    pub fn iter(&self) -> TrackerIter<'_> {
+        TrackerIter::new(self)
+    }
+
+    // *******************************************************
+    // *******************************************************
+    //                     HELPER FUNCTIONS
+    // *******************************************************
+    // *******************************************************
 
     /// Separated function that just returns a pending join handle.
     #[instrument(skip_all)]
@@ -85,55 +121,43 @@ impl TrackersList {
     }
 
     #[instrument(skip_all)]
-    async fn handshake_loop(&self, connected_tracker: Tracker) -> Result<()> {
+    async fn handshake_loop(
+        &self,
+        connected_tracker: Tracker,
+    ) -> Result<FuturesUnordered<JoinHandle<()>>> {
         let set = Arc::clone(&self.peers);
+        let handles = Arc::new(FuturesUnordered::new());
+        let handles_clone = Arc::clone(&handles);
         tokio::spawn(async move {
-            let peers_list = connected_tracker.get_response_guarded();
-            let peers_list = (*peers_list).get_peers_list();
+            let guraded_response = connected_tracker.get_response_guarded();
+            let peers_list = (*guraded_response).get_peers_list();
             match peers_list {
                 None => warn!("{} doesnot contain any peers", connected_tracker.url()),
                 Some(list) if list.num_of_peers() == 0 => {
                     warn!("{} doesnot contain any peers", connected_tracker.url())
                 }
                 Some(list) => {
-                    for peer in list {
-                        let mut guard = set.lock();
-                        if (*guard).insert(peer.clone()) {
-                            info!("{} has been inserted", peer.get_addr())
-                            // TODO: peer.handshake();
+                    let mut set_guard = set.lock();
+
+                    let mut inserted_peer = Vec::new();
+                    for peer in list.iter() {
+                        if (*set_guard).insert(peer.clone()) {
+                            info!("{} has been inserted", peer.get_addr());
+                            inserted_peer.push(peer.clone());
                         }
+                    }
+
+                    drop(set_guard);
+
+                    for peer in inserted_peer {
+                        handles_clone.push(tokio::spawn(async move { peer.set_connected() }));
                     }
                 }
             }
         })
-        .await
-        .map_err(|e| anyhow!(e))
-    }
+        .await?;
 
-    /// Announce to all trackers in the torrent
-    #[instrument(skip_all)]
-    pub async fn connect_all(&self, info_hash: InfoHashEncoded) {
-        let futures = self.announce_loop(info_hash).await;
-
-        futures
-            .for_each_concurrent(None, |connection| async move {
-                match connection {
-                    Ok(Ok(t)) => {
-                        info!("Connected! {}", t.url());
-                        match self.handshake_loop(t).await {
-                            Ok(_) => {}
-                            Err(e) => warn!("{}", e.to_string()),
-                        }
-                    }
-                    Ok(Err(e)) => warn!("{}", e.to_string()),
-                    Err(e) => warn!("{}", e.to_string()),
-                }
-            })
-            .await;
-    }
-
-    pub fn iter(&self) -> TrackerIter<'_> {
-        TrackerIter::new(self)
+        Arc::try_unwrap(handles).map_err(|_| anyhow!("Arc still has multiple strong references"))
     }
 }
 
