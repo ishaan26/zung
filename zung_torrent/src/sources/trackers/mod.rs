@@ -4,6 +4,7 @@
 
 mod request;
 use colored::Colorize;
+use dashmap::DashSet;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 pub use request::*;
@@ -13,7 +14,6 @@ pub use response::*;
 use tokio::task::JoinHandle;
 use tracing::{info, instrument, warn};
 
-use std::collections::HashSet;
 use std::net::Ipv4Addr;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
@@ -26,11 +26,18 @@ use crate::meta_info::InfoHashEncoded;
 
 use super::peers::Peer;
 
+// *******************************************************
+// *******************************************************
+//                    LIST OF TRACKERS
+// *******************************************************
+// *******************************************************
+
+/// A list of all the [`Tracker`]s contained in the [`MetaInfo`](crate::MetaInfo) file.
 #[derive(Debug)]
 pub struct TrackersList {
     list: Vec<Tracker>,
     num_connected: Arc<AtomicU32>,
-    peers: Arc<Mutex<HashSet<Peer>>>,
+    peers: Arc<DashSet<Peer>>,
 }
 
 impl TrackersList {
@@ -38,11 +45,11 @@ impl TrackersList {
         TrackersList {
             list,
             num_connected: Arc::new(AtomicU32::new(0)),
-            peers: Arc::new(Mutex::new(HashSet::new())),
+            peers: Arc::new(DashSet::new()),
         }
     }
 
-    pub fn get_list(&self) -> &[Tracker] {
+    pub fn as_slice(&self) -> &[Tracker] {
         &self.list
     }
 
@@ -79,14 +86,12 @@ impl TrackersList {
     ///
     /// The iterator yields a reference to all [`Tracker`] (s) in the tracker list from start to
     /// end.
-    pub fn iter(&self) -> TrackerIter<'_> {
-        TrackerIter::new(self)
+    pub fn iter(&self) -> TrackersListIter<'_> {
+        TrackersListIter::new(self)
     }
 
     // *******************************************************
-    // *******************************************************
     //                     HELPER FUNCTIONS
-    // *******************************************************
     // *******************************************************
 
     /// Separated function that just returns a pending join handle.
@@ -137,20 +142,14 @@ impl TrackersList {
                     warn!("{} doesnot contain any peers", connected_tracker.url())
                 }
                 Some(list) => {
-                    let mut set_guard = set.lock();
-
-                    let mut inserted_peer = Vec::new();
                     for peer in list.iter() {
-                        if (*set_guard).insert(peer.clone()) {
-                            info!("{} has been inserted", peer.get_addr());
-                            inserted_peer.push(peer.clone());
+                        if set.insert(peer.clone()) {
+                            let peer = peer.clone();
+                            handles_clone.push(tokio::spawn(async move {
+                                info!("{} has been inserted", peer.get_addr());
+                                peer.set_connected()
+                            }));
                         }
-                    }
-
-                    drop(set_guard);
-
-                    for peer in inserted_peer {
-                        handles_clone.push(tokio::spawn(async move { peer.set_connected() }));
                     }
                 }
             }
@@ -161,11 +160,11 @@ impl TrackersList {
     }
 }
 
-pub struct TrackerIter<'a> {
+pub struct TrackersListIter<'a> {
     iter: std::slice::Iter<'a, Tracker>,
 }
 
-impl<'a> TrackerIter<'a> {
+impl<'a> TrackersListIter<'a> {
     pub fn new(list: &'a TrackersList) -> Self {
         Self {
             iter: list.list.iter(),
@@ -173,7 +172,7 @@ impl<'a> TrackerIter<'a> {
     }
 }
 
-impl<'a> Iterator for TrackerIter<'a> {
+impl<'a> Iterator for TrackersListIter<'a> {
     type Item = &'a Tracker;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -183,12 +182,18 @@ impl<'a> Iterator for TrackerIter<'a> {
 
 impl<'a> IntoIterator for &'a TrackersList {
     type Item = &'a Tracker;
-    type IntoIter = TrackerIter<'a>;
+    type IntoIter = TrackersListIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
-        TrackerIter::new(self)
+        TrackersListIter::new(self)
     }
 }
+
+// *******************************************************
+// *******************************************************
+//                    SINGLE TRACKER
+// *******************************************************
+// *******************************************************
 
 /// Represents a UDP or HTTP torrent tracker.
 ///

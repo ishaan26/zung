@@ -387,7 +387,7 @@ impl Client {
 
         match self.sources() {
             DownloadSources::Trackers { tracker_list } => {
-                print_trackers(tracker_list.get_list());
+                print_trackers(tracker_list.as_slice());
             }
             DownloadSources::HttpSeeders { http_seeder_list } => {
                 print_http_seeders(http_seeder_list);
@@ -396,7 +396,7 @@ impl Client {
                 tracker_list,
                 http_seeder_list,
             } => {
-                print_trackers(tracker_list.get_list());
+                print_trackers(tracker_list.as_slice());
                 print_http_seeders(http_seeder_list);
             }
         }

@@ -103,7 +103,6 @@ impl TorrentArgs {
                 dbg!(total_trackers);
                 dbg!(connected_trackers);
                 dbg!(peers_list.len());
-                dbg!(torrent.sources().tracker_list());
             }
         }
 
