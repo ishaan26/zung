@@ -3,34 +3,35 @@
 //! See the [`Tracker`] documentation for more information.
 
 mod request;
-use colored::Colorize;
-use dashmap::DashSet;
-use futures::stream::FuturesUnordered;
-use futures::StreamExt;
-pub use request::*;
-
 mod response;
+
+use rayon::iter::ParallelIterator;
+use rayon::iter::{IntoParallelRefIterator, ParallelExtend};
+pub use request::*;
 pub use response::*;
-use tokio::task::JoinHandle;
+
+use super::peers::Peer;
+use crate::meta_info::InfoHashEncoded;
+
+use anyhow::{anyhow, bail, Result};
+use colored::Colorize;
 use tracing::{info, instrument, warn};
+
+use dashmap::DashSet;
+use futures::{stream::FuturesUnordered, StreamExt};
+use parking_lot::{Mutex, MutexGuard};
+use tokio::net::UdpSocket;
+use tokio::task::JoinHandle;
 
 use std::net::Ipv4Addr;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 
-use anyhow::{anyhow, bail, Result};
-use parking_lot::{Mutex, MutexGuard};
-use tokio::net::UdpSocket;
+const RETRY_COUNT: u8 = 10;
 
-use crate::meta_info::InfoHashEncoded;
-
-use super::peers::Peer;
-
-// *******************************************************
-// *******************************************************
-//                    LIST OF TRACKERS
-// *******************************************************
-// *******************************************************
+/////////////////////////////////////////////////////////////////////////////
+//                             LIST OF TRACKERS
+/////////////////////////////////////////////////////////////////////////////
 
 /// A list of all the [`Tracker`]s contained in the [`MetaInfo`](crate::MetaInfo) file.
 #[derive(Debug)]
@@ -53,6 +54,13 @@ impl TrackersList {
         &self.list
     }
 
+    pub fn peers_list(&self) -> Vec<Peer> {
+        let mut list = Vec::with_capacity(self.peers.len());
+        let iter = self.peers.par_iter().map(|p| p.clone());
+        list.par_extend(iter);
+        list
+    }
+
     pub fn number_of_trackers(&self) -> usize {
         self.list.len()
     }
@@ -64,19 +72,21 @@ impl TrackersList {
     /// Announce to all trackers in the torrent
     #[instrument(skip_all)]
     pub async fn connect_all(&self, info_hash: InfoHashEncoded) {
+        // Announce to all trackers and get unresolved futures.
         let futures = self.announce_loop(info_hash).await;
 
         futures
             .for_each_concurrent(None, |connection| async move {
+                // Remove the JoinError
                 match connection.map_err(|e| anyhow!(e)).and_then(|c| c) {
-                    Ok(tracker) => {
-                        info!("Connected! {}", tracker.url());
-                        match self.handshake_loop(tracker).await {
+                    Ok(connected_tracker) => {
+                        info!("Connected! {}", connected_tracker.url());
+                        match self.handshake_loop(connected_tracker).await {
                             Ok(mut futures) => while (futures.next().await).is_some() {},
                             Err(e) => warn!("{}", e.to_string()),
                         }
                     }
-                    Err(_) => todo!(),
+                    Err(e) => warn!("{e}"),
                 }
             })
             .await;
@@ -91,7 +101,7 @@ impl TrackersList {
     }
 
     // *******************************************************
-    //                     HELPER FUNCTIONS
+    //                     INTERNAL FUNCTIONS
     // *******************************************************
 
     /// Separated function that just returns a pending join handle.
@@ -100,14 +110,15 @@ impl TrackersList {
         &self,
         info_hash: InfoHashEncoded,
     ) -> FuturesUnordered<JoinHandle<Result<Tracker>>> {
-        let num = self.num_connected.clone();
+        let counter = Arc::clone(&self.num_connected);
+
         self.list
             .iter()
-            .cloned() // This performs an arc clone on the interal type.
+            .cloned() // This performs an Arc clone on the interal type.
             .map(|tracker| -> JoinHandle<Result<Tracker>> {
-                let num = Arc::clone(&num);
+                let num = Arc::clone(&counter);
                 tokio::spawn(async move {
-                    for _ in 0..10 {
+                    for _ in 0..RETRY_COUNT {
                         match tracker.announce(info_hash).await {
                             Ok(_) => {
                                 num.fetch_add(1, Ordering::SeqCst);
@@ -130,12 +141,16 @@ impl TrackersList {
         &self,
         connected_tracker: Tracker,
     ) -> Result<FuturesUnordered<JoinHandle<()>>> {
-        let set = Arc::clone(&self.peers);
-        let handles = Arc::new(FuturesUnordered::new());
-        let handles_clone = Arc::clone(&handles);
+        let hashset = Arc::clone(&self.peers);
+
+        let futures = Arc::new(FuturesUnordered::new());
+        let futures_clone = Arc::clone(&futures);
+
         tokio::spawn(async move {
+            // Get peers list from the connected tracker.
             let guraded_response = connected_tracker.get_response_guarded();
-            let peers_list = (*guraded_response).get_peers_list();
+            let peers_list = guraded_response.get_peers_list();
+
             match peers_list {
                 None => warn!("{} doesnot contain any peers", connected_tracker.url()),
                 Some(list) if list.num_of_peers() == 0 => {
@@ -143,9 +158,11 @@ impl TrackersList {
                 }
                 Some(list) => {
                     for peer in list.iter() {
-                        if set.insert(peer.clone()) {
+                        // If the unique peer is inserted in the hashset, spawn a thread to
+                        // handshake with it.
+                        if hashset.insert(peer.clone()) {
                             let peer = peer.clone();
-                            handles_clone.push(tokio::spawn(async move {
+                            futures_clone.push(tokio::spawn(async move {
                                 info!("{} has been inserted", peer.get_addr());
                                 peer.set_connected()
                             }));
@@ -156,10 +173,11 @@ impl TrackersList {
         })
         .await?;
 
-        Arc::try_unwrap(handles).map_err(|_| anyhow!("Arc still has multiple strong references"))
+        Arc::try_unwrap(futures).map_err(|_| anyhow!("Arc still has multiple strong references"))
     }
 }
 
+/// An Iterator over the [`TrackersList`] which yeilds a reference to the [`Tracker`].
 pub struct TrackersListIter<'a> {
     iter: std::slice::Iter<'a, Tracker>,
 }
@@ -189,11 +207,9 @@ impl<'a> IntoIterator for &'a TrackersList {
     }
 }
 
-// *******************************************************
-// *******************************************************
-//                    SINGLE TRACKER
-// *******************************************************
-// *******************************************************
+/////////////////////////////////////////////////////////////////////////////
+//                             SINGLE TRACKER
+/////////////////////////////////////////////////////////////////////////////
 
 /// Represents a UDP or HTTP torrent tracker.
 ///
@@ -216,7 +232,6 @@ struct TrackerInner {
     request: Mutex<TrackerRequest>,
     response: Mutex<TrackerResponse>,
     connected: AtomicBool,
-    state: AtomicBool,
     trys: AtomicU32,
 }
 
@@ -241,7 +256,6 @@ impl Tracker {
             request: Mutex::new(TrackerRequest::empty()),
             response: Mutex::new(TrackerResponse::empty()),
             connected: AtomicBool::new(false),
-            state: AtomicBool::new(false),
             trys: AtomicU32::new(0),
         };
 
@@ -304,7 +318,6 @@ impl Tracker {
     /// # Parameters
     /// - `info_hash`: The encoded info hash for the torrent.
     pub async fn announce(&self, info_hash: InfoHashEncoded) -> Result<()> {
-        self.inner.state.store(true, Ordering::Relaxed);
         self.inner.trys.fetch_add(1, Ordering::SeqCst);
 
         let request = self.tracker_request(info_hash).await?;
@@ -315,7 +328,6 @@ impl Tracker {
         self.set_request(request)?;
 
         self.set_response(response)?;
-        self.inner.state.store(false, Ordering::Relaxed);
 
         Ok(())
     }
@@ -325,15 +337,11 @@ impl Tracker {
     }
 
     pub fn url(&self) -> &str {
-        self.url.url()
+        self.url.as_str()
     }
 
     pub fn is_connected(&self) -> bool {
         self.inner.connected.load(Ordering::Relaxed)
-    }
-
-    pub fn is_processing(&self) -> bool {
-        self.inner.state.load(Ordering::Relaxed)
     }
 
     pub fn trys(&self) -> u32 {
@@ -356,6 +364,10 @@ impl Tracker {
         Ok(())
     }
 }
+
+/////////////////////////////////////////////////////////////////////////////
+//                             TRACKER URL
+/////////////////////////////////////////////////////////////////////////////
 
 // TODO: Look into SmallStr
 #[derive(Debug)]
@@ -386,7 +398,7 @@ impl TrackerUrl {
         }
     }
 
-    fn url(&self) -> &str {
+    fn as_str(&self) -> &str {
         match self {
             TrackerUrl::Http(s) => s,
             TrackerUrl::Udp(s) => s,

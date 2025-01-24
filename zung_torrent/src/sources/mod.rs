@@ -9,8 +9,6 @@ pub mod http_seeders;
 pub mod peers;
 pub mod trackers;
 
-use std::collections::HashSet;
-
 use anyhow::Result;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
@@ -99,6 +97,7 @@ impl DownloadSources {
     /// Returns a reference to the list of trackers, if available.
     ///
     /// # Example
+    ///
     /// ```
     ///use zung_torrent::sources::DownloadSources;
     ///
@@ -113,7 +112,7 @@ impl DownloadSources {
     /// # }
     /// ```
     ///
-    /// # NOTE:
+    /// # NOTE
     ///
     /// Please note that if this method is used before performing the
     /// [`announce_all`](DownloadSources::announce_all) method, this will return the [`Tracker`] in its
@@ -204,25 +203,11 @@ impl DownloadSources {
         }
     }
 
-    pub fn peers_list(&self) -> HashSet<Peer> {
+    pub fn peers_list(&self) -> Vec<Peer> {
         match self {
             DownloadSources::Trackers { tracker_list }
-            | DownloadSources::Hybrid { tracker_list, .. } => {
-                let mut list = HashSet::new();
-
-                for tracker in tracker_list {
-                    if let Some(peers) = tracker.get_response_guarded().get_peers_list() {
-                        for peer in peers.iter() {
-                            if list.insert(peer.clone()) {
-                                peer.set_connected();
-                            }
-                        }
-                    }
-                }
-
-                list
-            }
-            DownloadSources::HttpSeeders { .. } => HashSet::new(),
+            | DownloadSources::Hybrid { tracker_list, .. } => tracker_list.peers_list(),
+            DownloadSources::HttpSeeders { .. } => Vec::new(),
         }
     }
 }

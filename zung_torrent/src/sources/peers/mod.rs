@@ -23,6 +23,7 @@ use std::{
 };
 
 use anyhow::{bail, Result};
+use rayon::{iter::ParallelIterator, slice::ParallelSlice};
 use serde::{de::Visitor, Deserialize, Serialize, Serializer};
 
 /// Reprasents a single peer within the [`PeersList`]
@@ -270,7 +271,7 @@ impl PeersV4 {
         }
 
         let peers = bytes
-            .chunks_exact(6)
+            .par_chunks_exact(6)
             .map(|c| {
                 SocketAddrV4::new(
                     Ipv4Addr::new(c[0], c[1], c[2], c[3]),
@@ -335,7 +336,7 @@ impl PeersV6 {
         }
 
         let peers = bytes
-            .chunks_exact(18)
+            .par_chunks_exact(18)
             .map(|c| {
                 let ip: [u8; 16] = c[0..16].try_into().unwrap();
                 let port = u16::from_be_bytes([c[16], c[17]]);
