@@ -13,6 +13,10 @@
 //! the existing torrent file and try again later. You might find that more seeders come online,
 //! and the file becomes more available to stream.
 
+mod peer_messages;
+
+pub use peer_messages::*;
+
 use std::{
     hash::Hash,
     net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
@@ -41,7 +45,7 @@ impl Peer {
         }
     }
 
-    pub fn get_addr(&self) -> SocketAddr {
+    pub const fn get_addr(&self) -> SocketAddr {
         self.addr
     }
 

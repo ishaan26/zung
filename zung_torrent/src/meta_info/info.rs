@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     files::{FileAttr, FileNode, FileTree, Files},
-    pieces::Pieces,
+    pieces::PiecesList,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -52,7 +52,7 @@ pub struct Info {
 
     /// string consisting of the concatenation of all 20-byte SHA1 hash values, one per piece (byte
     /// string, i.e. not urlencoded)
-    pub(crate) pieces: Pieces,
+    pub(crate) pieces: PiecesList,
 
     // (optional) this field is an integer. If it is set to "1", the client MUST publish its
     // presence to get other peers ONLY via the trackers explicitly described in the metainfo file.
@@ -208,13 +208,13 @@ impl Deref for InfoHashEncoded {
 mod tests {
     use super::*;
     use crate::meta_info::files::{Files, MultiFiles};
-    use crate::meta_info::pieces::Pieces;
+    use crate::meta_info::pieces::PiecesList;
 
     #[test]
     fn test_torrent_size() {
         // Setup: Creating an instance of `Info` with mocked piece length and pieces.
         let piece_length = 1024; // each piece is 1024 bytes
-        let pieces = Pieces::__test_build();
+        let pieces = PiecesList::__test_build();
 
         let info = Info {
             piece_length,
@@ -237,7 +237,7 @@ mod tests {
         // Setup: Creating a single-file torrent info
         let info = Info {
             piece_length: 1024,
-            pieces: Pieces::__test_build(),
+            pieces: PiecesList::__test_build(),
             private: None,
             files: Files::SingleFile {
                 length: 4096,
@@ -279,7 +279,7 @@ mod tests {
 
         let info = Info {
             piece_length: 1024,
-            pieces: Pieces::__test_build(), // Mocked 4 pieces
+            pieces: PiecesList::__test_build(), // Mocked 4 pieces
             private: None,
             files: Files::MultiFile { files },
             name: "root_folder".to_string(),
