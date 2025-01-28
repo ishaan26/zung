@@ -13,6 +13,7 @@ use meta_info::MetaInfo;
 
 use clap::{Args, Subcommand};
 use meta_info::SortOrd;
+use sources::peers::PeerMessage;
 use std::path::PathBuf;
 
 /// Interact with torrent on the commandline. Install the [`zung`](https://crates.io/crates/zung)
@@ -98,11 +99,17 @@ impl TorrentArgs {
                     .unwrap()
                     .number_of_connected();
 
-                let peers_list = torrent.sources().peers_list();
-
                 dbg!(total_trackers);
                 dbg!(connected_trackers);
-                dbg!(peers_list);
+                dbg!(PeerMessage::bitfield(&[1, 2]).to_bytes().as_ref());
+
+                let request: PeerMessage<sources::peers::RequestPayload> =
+                    PeerMessage::from_bytes(&[
+                        0, 0, 0, 12, 6, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+                    ])?;
+
+                dbg!(request);
+                dbg!(request.payload());
             }
         }
 
