@@ -132,9 +132,7 @@ impl From<SocketAddrV6> for Peer {
 ///
 /// # Examples
 ///
-/// ```
-/// //  TODO: update examples when the Client API is finalized.
-/// ```
+///  TODO: update examples when the Client API is finalized.
 ///
 /// # NOTES
 ///

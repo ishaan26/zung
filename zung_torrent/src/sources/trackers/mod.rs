@@ -73,13 +73,12 @@ impl TrackersList {
     /// Announce to all trackers in the torrent
     #[instrument(skip_all)]
     pub async fn connect_all(&self, info_hash: InfoHashEncoded) {
-        // Announce to all trackers and get unresolved futures.
-        let futures = self.announce_loop(info_hash).await;
-
-        futures
-            .for_each_concurrent(None, |connection| async move {
+        // Announce to all trackers and get unresolved future that yeilds connected trackers.
+        self.announce_loop(info_hash)
+            .await
+            .for_each_concurrent(None, |connected_tracker| async move {
                 // Remove the JoinError
-                match connection.map_err(|e| anyhow!(e)).and_then(|c| c) {
+                match connected_tracker.map_err(|e| anyhow!(e)).and_then(|c| c) {
                     Ok(connected_tracker) => {
                         info!("Connected! {}", connected_tracker.url());
                         match self.handshake_loop(connected_tracker).await {
