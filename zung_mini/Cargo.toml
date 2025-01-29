@@ -10,8 +10,8 @@ readme = "README.md"
 keywords = ["projects", "learning", "mini"]
 
 [dependencies]
-clap = { version = "4.5.26", features = ["derive"] }
+clap = { version = "4.5.27", features = ["derive"] }
 indicatif = "0.17"
 colored = "3.0.0"
-rand = "0.8"
+rand = "0.9"
 prettytable = "0.10.0"

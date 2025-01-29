@@ -55,7 +55,7 @@ fn quicksort<T: Ord>(slice: &mut [T]) {
                 return;
             }
 
-            let pivot_index = rand::thread_rng().gen_range(0..slice.len());
+            let pivot_index = rand::rng().random_range(0..slice.len());
             slice.swap(0, pivot_index);
 
             let (pivot, rest) = slice.split_first_mut().expect("Unexpected empty slice");

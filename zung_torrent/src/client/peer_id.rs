@@ -216,8 +216,8 @@ fn get_system_time_bytes() -> [u8; 12] {
         .expect("Time went backwards");
 
     let millis = duration.as_nanos().to_be_bytes();
-    let mut rng = rand::thread_rng();
-    let random: u32 = rng.gen();
+    let mut rng = rand::rng();
+    let random: u32 = rng.random();
 
     // Combine 8 bytes of millis with 4 bytes of randomness
     let mut result = [0u8; 12];
