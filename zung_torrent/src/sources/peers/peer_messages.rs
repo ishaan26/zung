@@ -103,7 +103,9 @@ impl PeerMessage<()> {
         PeerMessage {
             // NOTE: Cannot use std::mem::size_of here as that would return the size of the fat
             // pointer of the slice instead of the actual size of the underlying slice.
-            len: payload.get_size_const() as u32 + 1,
+
+            //<len=0001+X>
+            len: 1 + payload.get_size_const() as u32,
             tag: PeerMessagesTag::Bitfield,
             payload,
         }
@@ -121,6 +123,24 @@ impl PeerMessage<()> {
                 begin: begin.to_be_bytes(),
                 length: length.to_be_bytes(),
             },
+        }
+    }
+
+    /// Creates a `PeerMessage` representing the `piece` message.
+    ///
+    /// A request message is used to request a block.
+    pub const fn piece(index: u32, begin: u32, block: &'static [u8]) -> PeerMessage<PiecePayload> {
+        let payload = PiecePayload {
+            index: index.to_be_bytes(),
+            begin: begin.to_be_bytes(),
+            block: Bytes::from_static(block),
+        };
+
+        PeerMessage {
+            // <len=0009+X> where X is the length of the block
+            len: 9 + payload.block_len() as u32,
+            tag: PeerMessagesTag::Piece,
+            payload,
         }
     }
 }
@@ -497,6 +517,52 @@ impl PeerMessagePayload for RequestPayload {
     }
 }
 
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq)]
+pub struct PiecePayload {
+    //  integer specifying the zero-based piece index
+    index: [u8; 4],
+
+    //  integer specifying the zero-based byte offset within the piece
+    begin: [u8; 4],
+
+    //  block of data, which is a subset of the piece specified by index.
+    block: Bytes,
+}
+
+impl PeerMessagePayload for PiecePayload {
+    fn as_bytes(&self) -> &[u8] {
+        let mut buff = BytesMut::with_capacity(4 + self.block.len());
+
+        buff.put_slice(&self.index);
+        buff.put_slice(&self.begin);
+        buff.put_slice(&self.block);
+
+        let bytes = buff.freeze();
+
+        // SAFETY: I HAVE NO CLUE WHAT SO EVER.
+        unsafe { std::slice::from_raw_parts(bytes.as_ptr(), bytes.len()) }
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        Ok(Self {
+            index: bytes[0..4].try_into()?,
+            begin: bytes[4..8].try_into()?,
+            block: Bytes::copy_from_slice(&bytes[8..]),
+        })
+    }
+
+    fn message_tag() -> PeerMessagesTag {
+        todo!()
+    }
+}
+
+impl PiecePayload {
+    pub const fn block_len(&self) -> usize {
+        self.block.len()
+    }
+}
+
 /////////////////////////////////////////////////////////////////////////////
 //                                  Tests
 /////////////////////////////////////////////////////////////////////////////
@@ -512,6 +578,7 @@ mod peer_messages_test {
     const HAVE: PeerMessage<HavePayload> = PeerMessage::have(0);
     const BITFIELD: PeerMessage<BitfieldPayload> = PeerMessage::bitfield(&[1, 2, 3, 4, 5, 6, 7, 8]);
     const REQUEST: PeerMessage<RequestPayload> = PeerMessage::request(1, 2, 3);
+    const PIECE: PeerMessage<PiecePayload> = PeerMessage::piece(1, 2, &[1, 2, 3, 4, 5]);
 
     #[test]
     fn check_lens() {
@@ -522,6 +589,7 @@ mod peer_messages_test {
         assert_eq!(HAVE.len, 5);
         assert_eq!(BITFIELD.len, 9);
         assert_eq!(REQUEST.len, 13);
+        assert_eq!(PIECE.len, 9 + 5);
     }
 
     #[test]
@@ -546,6 +614,9 @@ mod peer_messages_test {
 
         assert_eq!(REQUEST.tag, PeerMessagesTag::Request);
         assert_eq!(REQUEST.tag as u8, 6);
+
+        assert_eq!(PIECE.tag, PeerMessagesTag::Piece);
+        assert_eq!(PIECE.tag as u8, 7);
     }
 
     #[test]
@@ -570,6 +641,15 @@ mod peer_messages_test {
                 index: 1_u32.to_be_bytes(),
                 begin: 2_u32.to_be_bytes(),
                 length: 3_u32.to_be_bytes()
+            }
+        );
+
+        assert_eq!(
+            PIECE.payload,
+            PiecePayload {
+                index: 1_u32.to_be_bytes(),
+                begin: 2_u32.to_be_bytes(),
+                block: Bytes::copy_from_slice(&[1, 2, 3, 4, 5])
             }
         );
     }
