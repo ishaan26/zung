@@ -129,11 +129,21 @@ impl PeerMessage<()> {
     /// Creates a `PeerMessage` representing the `piece` message.
     ///
     /// A request message is used to request a block.
-    pub const fn piece(index: u32, begin: u32, block: &'static [u8]) -> PeerMessage<PiecePayload> {
-        let payload = PiecePayload {
+    pub fn piece(index: u32, begin: u32, block: &'static [u8]) -> PeerMessage<PiecePayload> {
+        let meta = PiecePayloadMetaData {
             index: index.to_be_bytes(),
             begin: begin.to_be_bytes(),
-            block: Bytes::from_static(block),
+        };
+
+        let mut all = BytesMut::with_capacity(8 + block.len());
+
+        all.put_slice(&meta.index);
+        all.put_slice(&meta.begin);
+        all.put_slice(block);
+
+        let payload = PiecePayload {
+            meta_data: meta,
+            all_bytes: all.freeze(),
         };
 
         PeerMessage {
@@ -163,11 +173,11 @@ where
     pub fn to_bytes(&self) -> Bytes {
         let payload_bytes = self.payload.as_bytes();
 
-        let mut bytes = BytesMut::with_capacity(dbg!(self.size()));
+        let mut bytes = BytesMut::with_capacity(self.size());
 
-        bytes.put_u32(dbg!(self.len));
-        bytes.put_u8(dbg!(self.tag as u8));
-        bytes.put_slice(dbg!(payload_bytes));
+        bytes.put_u32(self.len);
+        bytes.put_u8(self.tag as u8);
+        bytes.put_slice(payload_bytes);
 
         bytes.freeze()
     }
@@ -517,49 +527,61 @@ impl PeerMessagePayload for RequestPayload {
     }
 }
 
-#[repr(C)]
+// TODO: See if there is a better more optimized way for handle piece payload.
+
+/// Payload of the [`PeerMessage::piece`] message.
 #[derive(Debug, PartialEq, Eq)]
 pub struct PiecePayload {
-    //  integer specifying the zero-based piece index
+    meta_data: PiecePayloadMetaData,
+    all_bytes: Bytes,
+}
+
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq)]
+struct PiecePayloadMetaData {
     index: [u8; 4],
-
-    //  integer specifying the zero-based byte offset within the piece
     begin: [u8; 4],
-
-    //  block of data, which is a subset of the piece specified by index.
-    block: Bytes,
 }
 
 impl PeerMessagePayload for PiecePayload {
     fn as_bytes(&self) -> &[u8] {
-        let mut buff = BytesMut::with_capacity(4 + self.block.len());
-
-        buff.put_slice(&self.index);
-        buff.put_slice(&self.begin);
-        buff.put_slice(&self.block);
-
-        let bytes = buff.freeze();
-
-        // SAFETY: I HAVE NO CLUE WHAT SO EVER.
-        unsafe { std::slice::from_raw_parts(bytes.as_ptr(), bytes.len()) }
+        &self.all_bytes
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        ensure!(bytes.len() >= 9);
+
         Ok(Self {
-            index: bytes[0..4].try_into()?,
-            begin: bytes[4..8].try_into()?,
-            block: Bytes::copy_from_slice(&bytes[8..]),
+            meta_data: PiecePayloadMetaData {
+                index: bytes[0..4].try_into()?,
+                begin: bytes[4..8].try_into()?,
+            },
+            all_bytes: Bytes::copy_from_slice(bytes),
         })
     }
 
     fn message_tag() -> PeerMessagesTag {
-        todo!()
+        PeerMessagesTag::Piece
     }
 }
 
 impl PiecePayload {
+    pub const META_DATA_SIZE: usize = std::mem::size_of::<PiecePayloadMetaData>();
+
     pub const fn block_len(&self) -> usize {
-        self.block.len()
+        self.all_bytes.len() - Self::META_DATA_SIZE
+    }
+
+    pub const fn index(&self) -> u32 {
+        u32::from_be_bytes(self.meta_data.index)
+    }
+
+    pub const fn begin(&self) -> u32 {
+        u32::from_be_bytes(self.meta_data.begin)
+    }
+
+    pub fn block(&self) -> Bytes {
+        self.all_bytes.slice(Self::META_DATA_SIZE..)
     }
 }
 
@@ -569,6 +591,9 @@ impl PiecePayload {
 
 #[cfg(test)]
 mod peer_messages_test {
+
+    use std::sync::LazyLock;
+
     use super::*;
 
     const CHOKE: PeerMessage<ChokePayload> = PeerMessage::choke();
@@ -578,7 +603,8 @@ mod peer_messages_test {
     const HAVE: PeerMessage<HavePayload> = PeerMessage::have(0);
     const BITFIELD: PeerMessage<BitfieldPayload> = PeerMessage::bitfield(&[1, 2, 3, 4, 5, 6, 7, 8]);
     const REQUEST: PeerMessage<RequestPayload> = PeerMessage::request(1, 2, 3);
-    const PIECE: PeerMessage<PiecePayload> = PeerMessage::piece(1, 2, &[1, 2, 3, 4, 5]);
+    static PIECE: LazyLock<PeerMessage<PiecePayload>> =
+        LazyLock::new(|| PeerMessage::piece(1, 2, &[1, 2, 3, 4, 5]));
 
     #[test]
     fn check_lens() {
@@ -647,9 +673,11 @@ mod peer_messages_test {
         assert_eq!(
             PIECE.payload,
             PiecePayload {
-                index: 1_u32.to_be_bytes(),
-                begin: 2_u32.to_be_bytes(),
-                block: Bytes::copy_from_slice(&[1, 2, 3, 4, 5])
+                meta_data: PiecePayloadMetaData {
+                    index: 1_u32.to_be_bytes(),
+                    begin: 2_u32.to_be_bytes(),
+                },
+                all_bytes: Bytes::copy_from_slice(&[0, 0, 0, 1, 0, 0, 0, 2, 1, 2, 3, 4, 5])
             }
         );
     }

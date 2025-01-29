@@ -65,6 +65,7 @@ impl TrackersList {
         self.list.len()
     }
 
+    /// Retruns the number of connected trackers.
     pub fn number_of_connected(&self) -> u32 {
         self.num_connected.load(Ordering::Relaxed)
     }
