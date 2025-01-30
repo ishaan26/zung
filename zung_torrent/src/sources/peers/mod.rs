@@ -13,8 +13,10 @@
 //! the existing torrent file and try again later. You might find that more seeders come online,
 //! and the file becomes more available to stream.
 
+mod handshake;
 mod peer_messages;
 
+pub use handshake::*;
 pub use peer_messages::*;
 
 use std::{

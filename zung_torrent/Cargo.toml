@@ -25,7 +25,6 @@ chrono = { version = "0.4.39", features = ["serde"] }
 sha1_smol = "1.0.1"
 rayon = "1.10.0"
 indexmap = "2.7.1"
-rand = "0.9.0"
 human_bytes = { version = "0.4.3", optional = true }
 reqwest = "0.12.12"
 parking_lot = "0.12.3"

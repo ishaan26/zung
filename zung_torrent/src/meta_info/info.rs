@@ -194,6 +194,10 @@ impl InfoHashEncoded {
         }
         buff
     }
+
+    pub const fn as_bytes(&self) -> [u8; 20] {
+        self.0
+    }
 }
 
 impl Deref for InfoHashEncoded {

@@ -164,7 +164,7 @@ impl TrackersList {
                             let peer = peer.clone();
                             futures_clone.push(tokio::spawn(async move {
                                 info!("{} has been inserted", peer.get_addr());
-                                peer.set_connected()
+                                // peer.handshake();
                             }));
                         }
                     }
