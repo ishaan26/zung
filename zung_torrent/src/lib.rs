@@ -14,6 +14,9 @@ use meta_info::MetaInfo;
 use clap::{Args, Subcommand};
 use meta_info::SortOrd;
 use std::path::PathBuf;
+use std::time::Duration;
+
+pub const TIMEOUT_DURATION: Duration = Duration::from_secs(5);
 
 /// Interact with torrent on the commandline. Install the [`zung`](https://crates.io/crates/zung)
 /// crate and run `zung torrent --help` to see what options are available
@@ -98,8 +101,19 @@ impl TorrentArgs {
                     .unwrap()
                     .number_of_connected();
 
+                let peers_list = torrent.sources().peers_list();
+
+                let mut connected_peers = 0;
+                for peer in &peers_list {
+                    if peer.is_connected() {
+                        connected_peers += 1;
+                    }
+                }
+
                 dbg!(total_trackers);
                 dbg!(connected_trackers);
+                dbg!(peers_list.len());
+                dbg!(connected_peers);
             }
         }
 

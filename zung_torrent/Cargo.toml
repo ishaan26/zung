@@ -37,6 +37,7 @@ tokio = { version = "1.43.0", features = [
   "macros",
   "tracing",
 ] }
+tokio-util = { version = "0.7.13", features = ["time"] }
 futures = "0.3.31"
 
 serde = { version = "1.0.217", features = ["derive"] }

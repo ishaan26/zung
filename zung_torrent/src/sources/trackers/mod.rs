@@ -81,7 +81,7 @@ impl TrackersList {
                 match connected_tracker.map_err(|e| anyhow!(e)).and_then(|c| c) {
                     Ok(connected_tracker) => {
                         info!("Connected! {}", connected_tracker.url());
-                        match self.handshake_loop(connected_tracker).await {
+                        match self.handshake_loop(connected_tracker, info_hash).await {
                             Ok(mut futures) => while (futures.next().await).is_some() {},
                             Err(e) => warn!("{}", e.to_string()),
                         }
@@ -140,40 +140,40 @@ impl TrackersList {
     async fn handshake_loop(
         &self,
         connected_tracker: Tracker,
+        info_hash: InfoHashEncoded,
     ) -> Result<FuturesUnordered<JoinHandle<()>>> {
         let hashset = Arc::clone(&self.peers);
 
-        let futures = Arc::new(FuturesUnordered::new());
-        let futures_clone = Arc::clone(&futures);
+        let futures = FuturesUnordered::new();
 
-        tokio::spawn(async move {
-            // Get peers list from the connected tracker.
-            let guraded_response = connected_tracker.get_response_guarded();
-            let peers_list = guraded_response.get_peers_list();
+        // Get peers list from the connected tracker.
+        let guraded_response = connected_tracker.get_response_guarded();
+        let peers_list = guraded_response.get_peers_list();
 
-            match peers_list {
-                None => warn!("{} doesnot contain any peers", connected_tracker.url()),
-                Some(list) if list.num_of_peers() == 0 => {
-                    warn!("{} doesnot contain any peers", connected_tracker.url())
-                }
-                Some(list) => {
-                    for peer in list.iter() {
-                        // If the unique peer is inserted in the hashset, spawn a thread to
-                        // handshake with it.
-                        if hashset.insert(peer.clone()) {
-                            let peer = peer.clone();
-                            futures_clone.push(tokio::spawn(async move {
-                                info!("{} has been inserted", peer.get_addr());
-                                // peer.handshake();
-                            }));
-                        }
+        match peers_list {
+            None => warn!("{} doesnot contain any peers", connected_tracker.url()),
+            Some(list) if list.num_of_peers() == 0 => {
+                warn!("{} doesnot contain any peers", connected_tracker.url())
+            }
+            Some(list) => {
+                for peer in list.iter() {
+                    // If the unique peer is inserted in the hashset, spawn a thread to
+                    // handshake with it.
+                    if hashset.insert(peer.clone()) {
+                        let peer = peer.clone();
+                        futures.push(tokio::spawn(async move {
+                            info!("{} has been inserted", peer.get_addr());
+                            match peer.handshake(info_hash).await {
+                                Ok(_) => peer.set_connected(),
+                                Err(e) => warn!("{}", e.to_string()),
+                            }
+                        }));
                     }
                 }
             }
-        })
-        .await?;
+        }
 
-        Arc::try_unwrap(futures).map_err(|_| anyhow!("Arc still has multiple strong references"))
+        Ok(futures)
     }
 }
 

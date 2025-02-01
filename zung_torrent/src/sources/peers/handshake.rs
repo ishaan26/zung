@@ -1,9 +1,9 @@
 use crate::{client::PEER_ID, meta_info::InfoHashEncoded};
 
-/// The handshake is a required message and must be the first message transmitted by the client. It
-/// is (49+len(pstr)) bytes long.
+/// Represents the BitTorrent handshake message.
 ///
-/// <pstrlen><pstr><reserved><info_hash><peer_id>
+/// The handshake is the first message transmitted by a client to a peer in the BitTorrent
+/// protocol.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct Handshake {
@@ -29,8 +29,13 @@ pub struct Handshake {
 }
 
 impl Handshake {
+    /// The v1 protocol identifier for BitTorrent which is always "BitTorrent protocol".    
     pub const PROTOCOL_V1: [u8; 19] = *b"BitTorrent protocol";
 
+    /// The total size (in bytes) of a handshake message which is 68.
+    pub const SIZE: usize = size_of::<Self>();
+
+    /// Constructs a new handshake with default protocol version and peer ID
     pub fn new(info_hash: InfoHashEncoded) -> Self {
         Self {
             pstrlen: 19,
@@ -41,8 +46,9 @@ impl Handshake {
         }
     }
 
-    pub const fn as_bytes(&self) -> [u8; size_of::<Self>()] {
-        let bytes = self as *const Self as *const [u8; size_of::<Self>()];
+    /// Returns the handshake message as an array of bytes.
+    pub const fn as_bytes(&self) -> [u8; Self::SIZE] {
+        let bytes = self as *const Self as *const [u8; Self::SIZE];
 
         // SAFETY:
         // - The struct is marked `#[repr(C)]`, ensuring a well-defined, packed layout without padding.
@@ -52,5 +58,38 @@ impl Handshake {
         //   bytes),
         //   confirming there's no implicit padding.
         unsafe { *bytes }
+    }
+
+    /// Constructs a `Handshake` instance from an array of bytes. This intended to be used when
+    /// reading the reply message of a initiated Handshake Message.
+    pub const fn from_bytes(bytes: [u8; Self::SIZE]) -> Self {
+        let handshake = &bytes as *const [u8; Self::SIZE] as *const Self;
+
+        unsafe { *handshake }
+    }
+
+    /// Returns the protocol string length (`pstrlen`).
+    pub const fn pstrlen(&self) -> u8 {
+        self.pstrlen
+    }
+
+    /// Returns the protocol string (`pstr`).
+    pub const fn pstr(&self) -> [u8; 19] {
+        self.pstr
+    }
+
+    /// Returns the reserved bytes.
+    pub const fn reserved(&self) -> [u8; 8] {
+        self.reserved
+    }
+
+    /// Returns the info hash.
+    pub const fn info_hash(&self) -> [u8; 20] {
+        self.info_hash
+    }
+
+    /// Returns the peer identifier.
+    pub const fn peer_id(&self) -> [u8; 20] {
+        self.peer_id
     }
 }

@@ -19,6 +19,12 @@ mod peer_messages;
 pub use handshake::*;
 pub use peer_messages::*;
 
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+};
+use tokio_util::time::FutureExt;
+
 use std::{
     hash::Hash,
     net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
@@ -28,9 +34,12 @@ use std::{
     },
 };
 
-use anyhow::{bail, Result};
+use anyhow::{bail, ensure, Result};
 use rayon::{iter::ParallelIterator, slice::ParallelSlice};
 use serde::{de::Visitor, Deserialize, Serialize, Serializer};
+use tracing::info;
+
+use crate::{meta_info::InfoHashEncoded, TIMEOUT_DURATION};
 
 /// Reprasents a single peer within the [`PeersList`]
 #[derive(Debug)]
@@ -40,11 +49,40 @@ pub struct Peer {
 }
 
 impl Peer {
-    fn get_octets(&self) -> Vec<u8> {
-        match &self.addr {
-            SocketAddr::V4(socket_addr_v4) => socket_addr_v4.ip().octets().to_vec(),
-            SocketAddr::V6(socket_addr_v6) => socket_addr_v6.ip().octets().to_vec(),
-        }
+    pub async fn handshake(&self, info_hash: InfoHashEncoded) -> Result<TcpStream> {
+        let mut stream = TcpStream::connect(self.addr)
+            .timeout(TIMEOUT_DURATION)
+            .await??;
+
+        let handshake = Handshake::new(info_hash);
+
+        stream
+            .write_all(&handshake.as_bytes())
+            .timeout(TIMEOUT_DURATION)
+            .await??;
+
+        stream.flush().await?;
+
+        let mut buff = [0; Handshake::SIZE];
+        let read = stream
+            .read_exact(&mut buff)
+            .timeout(TIMEOUT_DURATION)
+            .await??;
+
+        ensure!(
+            read == std::mem::size_of::<Handshake>(),
+            "Handshake: required bytes not sent by the peer"
+        );
+
+        let rec_handshake = Handshake::from_bytes(buff);
+
+        ensure!(rec_handshake.pstr() == Handshake::PROTOCOL_V1);
+        ensure!(rec_handshake.pstrlen() == Handshake::PROTOCOL_V1.len() as u8);
+        ensure!(rec_handshake.info_hash() == handshake.info_hash());
+
+        info!("Handshake complete: {}", &self.addr);
+
+        Ok(stream)
     }
 
     pub const fn get_addr(&self) -> SocketAddr {
@@ -59,6 +97,13 @@ impl Peer {
     /// Check if the peer is connected or not.
     pub fn is_connected(&self) -> bool {
         self.connected.load(Ordering::Relaxed)
+    }
+
+    fn get_octets(&self) -> Vec<u8> {
+        match &self.addr {
+            SocketAddr::V4(socket_addr_v4) => socket_addr_v4.ip().octets().to_vec(),
+            SocketAddr::V6(socket_addr_v6) => socket_addr_v6.ip().octets().to_vec(),
+        }
     }
 }
 
@@ -114,6 +159,7 @@ impl From<SocketAddrV4> for Peer {
         Self {
             addr: SocketAddr::from(value),
             connected: Arc::new(AtomicBool::new(false)),
+            // TODO: use TryFrom
         }
     }
 }

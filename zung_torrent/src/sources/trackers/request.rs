@@ -1,27 +1,25 @@
 use std::sync::Arc;
-use std::time::Duration;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, bail, ensure, Context, Result};
 use bytes::{BufMut, BytesMut};
 use serde::Serialize;
 
 use tokio::net::UdpSocket;
 use tokio::time::timeout;
+use tokio_util::time::FutureExt;
 use tracing::{debug, instrument};
 use zung_parsers::bencode;
 
 use crate::client::PEER_ID;
 use crate::meta_info::InfoHashEncoded;
 use crate::sources::trackers::{HttpTrackerResponse, TrackerResponseState, UdpTrackerResponse};
-use crate::PeerID;
+use crate::{PeerID, TIMEOUT_DURATION};
 
 use super::TrackerResponse;
 
 pub const UDP_PROTOCOL_ID: i64 = 0x41727101980; // Magic torrent number. DNC!
 pub const UDP_TRANSACTION_ID: i32 = 696969;
 const MIN_UDP_RESPONSE_SIZE: usize = 20;
-
-pub const REQUEST_TIMEOUT_DURATION: Duration = Duration::from_secs(5);
 
 /// Represents different types of BitTorrent tracker requests.
 ///
@@ -135,7 +133,7 @@ impl TrackerRequest {
             // HTTP request wherein response is recieved as a bencode dictionary.
             TrackerRequestState::Http { .. } => {
                 let url = self.to_url()?;
-                let request = timeout(REQUEST_TIMEOUT_DURATION, reqwest::get(&url))
+                let request = timeout(TIMEOUT_DURATION, reqwest::get(&url))
                     .await
                     .with_context(|| format!("Connection Timed Out: {url}"))?
                     .context(format!("Failed to connect: {url}"))?;
@@ -169,20 +167,17 @@ impl TrackerRequest {
 
                 let request_bytes = params.to_bytes();
 
-                timeout(REQUEST_TIMEOUT_DURATION, socket.send(&request_bytes))
+                timeout(TIMEOUT_DURATION, socket.send(&request_bytes))
                     .await
                     .with_context(|| format!("Send Timed Out: {url}"))?
                     .context("Sending connect request")?;
 
                 debug!("UDP Tracker Request Sent");
 
-                let (rec, socket) = timeout(
-                    REQUEST_TIMEOUT_DURATION,
-                    socket.recv_buf_from(&mut response),
-                )
-                .await
-                .with_context(|| format!("Recieve Timed Out: {url}"))?
-                .context(format!("Failed to recieve any response: {url}"))?;
+                let (rec, socket) = timeout(TIMEOUT_DURATION, socket.recv_buf_from(&mut response))
+                    .await
+                    .with_context(|| format!("Recieve Timed Out: {url}"))?
+                    .context(format!("Failed to recieve any response: {url}"))?;
 
                 if rec < MIN_UDP_RESPONSE_SIZE {
                     bail!("Invalid or No response recieved: {url}")
@@ -525,24 +520,30 @@ impl UdpConnectRequest {
         let request_bytes = self.as_bytes();
         let mut response = [0_u8; 16];
 
-        timeout(REQUEST_TIMEOUT_DURATION, socket.connect(udp_url))
+        socket
+            .connect(udp_url)
+            .timeout(TIMEOUT_DURATION)
             .await
             .with_context(|| format!("Connection Timed Out: {udp_url}"))?
-            .context(format!("Failed to connect: {udp_url}"))?;
+            .with_context(|| format!("Failed to connect: {udp_url}"))?;
 
         debug!("Connected");
 
-        timeout(REQUEST_TIMEOUT_DURATION, socket.send(&request_bytes))
+        socket
+            .send(&request_bytes)
+            .timeout(TIMEOUT_DURATION)
             .await
             .with_context(|| format!("Send Timed Out: {udp_url}"))?
-            .context("Sending connect request")?;
+            .with_context(|| format!("Sending connect request: {udp_url}"))?;
 
         debug!("Request Sent");
 
-        timeout(REQUEST_TIMEOUT_DURATION, socket.recv(&mut response))
+        socket
+            .recv(&mut response)
+            .timeout(TIMEOUT_DURATION)
             .await
             .with_context(|| format!("Recieve Timed Out: {udp_url}"))?
-            .context(format!("Failed to recieve any response: {udp_url}"))?;
+            .with_context(|| format!("Failed to recieve any response: {udp_url}"))?;
 
         debug!("Response Recieved");
 
@@ -552,11 +553,12 @@ impl UdpConnectRequest {
             connection_id: i64::from_be_bytes(response[8..16].try_into()?),
         };
 
-        if udp_response.transaction_id == self.transaction_id {
-            Ok(udp_response)
-        } else {
-            bail!("Invalid response from udp server")
-        }
+        ensure!(
+            udp_response.transaction_id == self.transaction_id,
+            "Transaction ids mismatch!, Invalid response from udp server"
+        );
+
+        Ok(udp_response)
     }
 }
 
