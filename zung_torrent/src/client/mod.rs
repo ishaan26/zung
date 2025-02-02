@@ -385,14 +385,14 @@ impl Client {
             }
         }
 
-        match self.sources() {
-            DownloadSources::Trackers { tracker_list } => {
+        match &self.sources().state {
+            crate::sources::DownloadSourcesState::Trackers { tracker_list } => {
                 print_trackers(tracker_list.as_slice());
             }
-            DownloadSources::HttpSeeders { http_seeder_list } => {
+            crate::sources::DownloadSourcesState::HttpSeeders { http_seeder_list } => {
                 print_http_seeders(http_seeder_list);
             }
-            DownloadSources::Hybrid {
+            crate::sources::DownloadSourcesState::Hybrid {
                 tracker_list,
                 http_seeder_list,
             } => {

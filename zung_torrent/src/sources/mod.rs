@@ -21,8 +21,14 @@ use trackers::{Tracker, TrackersList};
 ///
 /// This enum is constructed when the [`Client`](crate::Client) is initialized. A reference to it
 /// can be drawn from the [`sources`](crate::Client::sources) method.
+
 #[derive(Debug)]
-pub enum DownloadSources {
+pub struct DownloadSources {
+    pub(crate) state: DownloadSourcesState,
+}
+
+#[derive(Debug)]
+pub(crate) enum DownloadSourcesState {
     /// Genarated if only `announce` or `announce_list` keys are specified in the [`MetaInfo`]
     /// file.
     Trackers { tracker_list: TrackersList },
@@ -53,6 +59,7 @@ impl DownloadSources {
                 .flatten()
                 .map(|announce| Tracker::new(announce))
                 .collect(),
+
             None => match meta_info.announce() {
                 Some(announce) => vec![Tracker::new(announce)],
                 None => Vec::new(),
@@ -74,22 +81,30 @@ impl DownloadSources {
                 if meta_info.announce.is_some() || meta_info.announce_list.is_some() {
                     let http_seeder_list = http_seeder_list(url_list);
                     if http_seeder_list.is_empty() {
-                        return Self::Trackers {
-                            tracker_list: TrackersList::new(tracker_list),
+                        return Self {
+                            state: DownloadSourcesState::Trackers {
+                                tracker_list: TrackersList::new(tracker_list),
+                            },
                         };
                     }
-                    Self::Hybrid {
-                        tracker_list: TrackersList::new(tracker_list),
-                        http_seeder_list,
+                    DownloadSources {
+                        state: DownloadSourcesState::Hybrid {
+                            tracker_list: TrackersList::new(tracker_list),
+                            http_seeder_list,
+                        },
                     }
                 } else {
-                    Self::HttpSeeders {
-                        http_seeder_list: http_seeder_list(url_list),
+                    DownloadSources {
+                        state: DownloadSourcesState::HttpSeeders {
+                            http_seeder_list: http_seeder_list(url_list),
+                        },
                     }
                 }
             }
-            None => Self::Trackers {
-                tracker_list: TrackersList::new(tracker_list),
+            None => DownloadSources {
+                state: DownloadSourcesState::Trackers {
+                    tracker_list: TrackersList::new(tracker_list),
+                },
             },
         }
     }
@@ -118,10 +133,10 @@ impl DownloadSources {
     /// [`announce_all`](DownloadSources::announce_all) method, this will return the [`Tracker`] in its
     /// uninitialized state, meaning that each Tracker will have to be announced mannually.
     pub fn tracker_list(&self) -> Option<&TrackersList> {
-        match self {
-            DownloadSources::Trackers { tracker_list }
-            | DownloadSources::Hybrid { tracker_list, .. } => Some(tracker_list),
-            DownloadSources::HttpSeeders { .. } => None,
+        match &self.state {
+            DownloadSourcesState::Trackers { tracker_list }
+            | DownloadSourcesState::Hybrid { tracker_list, .. } => Some(tracker_list),
+            DownloadSourcesState::HttpSeeders { .. } => None,
         }
     }
 
@@ -130,7 +145,7 @@ impl DownloadSources {
     /// [`Trackers`]: DownloadSources::Trackers
     #[must_use]
     pub fn is_trackers(&self) -> bool {
-        matches!(self, Self::Trackers { .. })
+        matches!(self.state, DownloadSourcesState::Trackers { .. })
     }
 
     /// Returns a reference to the list of http seeders, if available.
@@ -150,11 +165,11 @@ impl DownloadSources {
     /// # }
     /// ```
     pub fn http_seeders(&self) -> Option<&HttpSeedersList> {
-        if let Self::HttpSeeders { http_seeder_list } = self {
+        if let DownloadSourcesState::HttpSeeders { http_seeder_list } = &self.state {
             Some(http_seeder_list)
-        } else if let Self::Hybrid {
+        } else if let DownloadSourcesState::Hybrid {
             http_seeder_list, ..
-        } = self
+        } = &self.state
         {
             Some(http_seeder_list)
         } else {
@@ -167,15 +182,20 @@ impl DownloadSources {
     /// [`HttpSeeders`]: DownloadSources::HttpSeeders
     #[must_use]
     pub fn is_http_seeders(&self) -> bool {
-        matches!(self, Self::HttpSeeders { .. })
+        matches!(
+            self,
+            DownloadSources {
+                state: DownloadSourcesState::HttpSeeders { .. }
+            }
+        )
     }
 
     /// Returns the hybrid_sources, if any, contained in the [`DownloadSources`].
     pub fn hybrid(&self) -> Option<(&TrackersList, &HttpSeedersList)> {
-        if let Self::Hybrid {
+        if let DownloadSourcesState::Hybrid {
             tracker_list,
             http_seeder_list,
-        } = self
+        } = &self.state
         {
             Some((tracker_list, http_seeder_list))
         } else {
@@ -188,26 +208,26 @@ impl DownloadSources {
     /// [`Hybrid`]: DownloadSources::Hybrid
     #[must_use]
     pub fn is_hybrid(&self) -> bool {
-        matches!(self, Self::Hybrid { .. })
+        matches!(self.state, DownloadSourcesState::Hybrid { .. })
     }
 
     pub async fn connect(&self, info_hash: InfoHashEncoded) -> Result<()> {
-        match self {
-            DownloadSources::Trackers { tracker_list }
-            | DownloadSources::Hybrid { tracker_list, .. } => {
+        match &self.state {
+            DownloadSourcesState::Trackers { tracker_list }
+            | DownloadSourcesState::Hybrid { tracker_list, .. } => {
                 tracker_list.connect_all(info_hash).await;
                 Ok(())
             }
 
-            DownloadSources::HttpSeeders { .. } => todo!(),
+            DownloadSourcesState::HttpSeeders { .. } => todo!(),
         }
     }
 
     pub fn peers_list(&self) -> Vec<Peer> {
-        match self {
-            DownloadSources::Trackers { tracker_list }
-            | DownloadSources::Hybrid { tracker_list, .. } => tracker_list.peers_list(),
-            DownloadSources::HttpSeeders { .. } => Vec::new(),
+        match &self.state {
+            DownloadSourcesState::Trackers { tracker_list }
+            | DownloadSourcesState::Hybrid { tracker_list, .. } => tracker_list.peers_list(),
+            DownloadSourcesState::HttpSeeders { .. } => Vec::new(),
         }
     }
 }

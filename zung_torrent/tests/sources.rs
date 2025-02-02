@@ -1,5 +1,4 @@
 use utilities::torrent::CLIENT;
-use zung_torrent::sources::DownloadSources;
 
 #[test]
 fn source_types() {
@@ -8,10 +7,10 @@ fn source_types() {
     let mc = CLIENT.mc.sources();
     let kali = CLIENT.kali.sources();
 
-    matches!(arch, DownloadSources::HttpSeeders { .. });
-    matches!(mit, DownloadSources::Hybrid { .. });
-    matches!(mc, DownloadSources::Trackers { .. });
-    matches!(kali, DownloadSources::Trackers { .. });
+    assert!(arch.is_http_seeders());
+    assert!(mit.is_hybrid());
+    assert!(mc.is_trackers());
+    assert!(kali.is_hybrid());
 }
 
 #[test]
