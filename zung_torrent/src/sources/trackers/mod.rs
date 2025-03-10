@@ -9,6 +9,7 @@ use rayon::iter::ParallelIterator;
 use rayon::iter::{IntoParallelRefIterator, ParallelExtend};
 pub use request::*;
 pub use response::*;
+use tokio::sync::Semaphore;
 
 use super::peers::Peer;
 use crate::meta_info::InfoHashEncoded;
@@ -27,7 +28,7 @@ use std::net::Ipv4Addr;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 
-const RETRY_COUNT: u8 = 10;
+const CONCURRENT_CONNECTION_LIMIT: usize = 20;
 
 /////////////////////////////////////////////////////////////////////////////
 //                             LIST OF TRACKERS
@@ -117,17 +118,15 @@ impl TrackersList {
             .cloned() // This performs an Arc clone on the interal type.
             .map(|tracker| -> JoinHandle<Result<Tracker>> {
                 let num = Arc::clone(&counter);
+                // TODO: Think reannouncing.
                 tokio::spawn(async move {
-                    for _ in 0..RETRY_COUNT {
-                        match tracker.announce(info_hash).await {
-                            Ok(_) => {
-                                num.fetch_add(1, Ordering::SeqCst);
-                                return Ok(tracker);
-                            }
-                            Err(e) => {
-                                warn!("{}: {}", tracker.url().italic(), e.to_string());
-                                continue;
-                            }
+                    match tracker.announce(info_hash).await {
+                        Ok(_) => {
+                            num.fetch_add(1, Ordering::SeqCst);
+                            return Ok(tracker);
+                        }
+                        Err(e) => {
+                            warn!("{}: {}", tracker.url().italic(), e.to_string());
                         }
                     }
                     Ok(tracker)
@@ -142,7 +141,10 @@ impl TrackersList {
         connected_tracker: Tracker,
         info_hash: InfoHashEncoded,
     ) -> Result<FuturesUnordered<JoinHandle<()>>> {
-        let hashset = Arc::clone(&self.peers);
+        let peers_hashset = Arc::clone(&self.peers);
+
+        // Limit the number of outgoing requests being sent at the same time
+        let semaphore = Arc::new(Semaphore::new(CONCURRENT_CONNECTION_LIMIT));
 
         let futures = FuturesUnordered::new();
 
@@ -159,14 +161,18 @@ impl TrackersList {
                 for peer in list.iter() {
                     // If the unique peer is inserted in the hashset, spawn a thread to
                     // handshake with it.
-                    if hashset.insert(peer.clone()) {
+                    if peers_hashset.insert(peer.clone()) {
                         let peer = peer.clone();
+                        let semaphore = semaphore.clone();
+
                         futures.push(tokio::spawn(async move {
+                            let _permit = semaphore.acquire().await.unwrap();
                             info!("{} has been inserted", peer.get_addr());
                             match peer.handshake(info_hash).await {
                                 Ok(_) => peer.set_connected(),
                                 Err(e) => warn!("{}", e.to_string()),
                             }
+                            drop(_permit);
                         }));
                     }
                 }
