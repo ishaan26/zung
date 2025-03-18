@@ -82,9 +82,9 @@ impl TrackersList {
                 match connected_tracker.map_err(|e| anyhow!(e)).and_then(|c| c) {
                     Ok(connected_tracker) => {
                         info!("Connected! {}", connected_tracker.url());
-                        match self.handshake_loop(connected_tracker, info_hash).await {
+                        match self.handshake_loop(&connected_tracker, info_hash).await {
                             Ok(mut futures) => while (futures.next().await).is_some() {},
-                            Err(e) => warn!("{}", e.to_string()),
+                            Err(e) => warn!("{}: {}", e.to_string(), connected_tracker.url()),
                         }
                     }
                     Err(e) => warn!("{e}"),
@@ -138,9 +138,9 @@ impl TrackersList {
     #[instrument(skip_all)]
     async fn handshake_loop(
         &self,
-        connected_tracker: Tracker,
+        connected_tracker: &Tracker,
         info_hash: InfoHashEncoded,
-    ) -> Result<FuturesUnordered<JoinHandle<()>>> {
+    ) -> Result<FuturesUnordered<JoinHandle<Result<Peer>>>> {
         let peers_hashset = Arc::clone(&self.peers);
 
         // Limit the number of outgoing requests being sent at the same time
@@ -165,15 +165,27 @@ impl TrackersList {
                         let peer = peer.clone();
                         let semaphore = semaphore.clone();
 
-                        futures.push(tokio::spawn(async move {
+                        let handle = tokio::spawn(async move {
                             let _permit = semaphore.acquire().await.unwrap();
                             info!("{} has been inserted", peer.get_addr());
-                            match peer.handshake(info_hash).await {
-                                Ok(_) => peer.set_connected(),
-                                Err(e) => warn!("{}", e.to_string()),
-                            }
+
+                            let peer = match peer.handshake(info_hash).await {
+                                Ok(_) => {
+                                    peer.set_connected();
+                                    Ok(peer)
+                                }
+                                Err(e) => {
+                                    warn!("{}", e.to_string());
+                                    Err(e)
+                                }
+                            };
+
                             drop(_permit);
-                        }));
+
+                            peer
+                        });
+
+                        futures.push(handle);
                     }
                 }
             }

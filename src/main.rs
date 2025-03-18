@@ -97,19 +97,12 @@ fn _set_subscribers_t() {
         .init();
 }
 
+// For stdout
 fn _set_subscribers_n() {
     tracing_subscriber::fmt()
         // all spans/events with a level higher than TRACE (e.g, info, warn, etc.)
         // will be written to stdout.
-        .with_env_filter("zung=info")
-        .without_time()
-        .compact()
-        // display source code file paths
-        .with_file(false)
-        // display source code line numbers
-        .with_line_number(false)
-        // disable targets
-        .with_target(false)
+        .with_env_filter("zung=trace")
         .init(); // sets this to be the default, global subscriber for this application.
 }
 

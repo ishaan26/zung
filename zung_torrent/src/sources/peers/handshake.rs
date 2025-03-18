@@ -52,7 +52,8 @@ impl Handshake {
 
         // SAFETY:
         //
-        // - The struct is marked `#[repr(C)]`, ensuring a well-defined, packed layout without padding.
+        // - The struct is marked `#[repr(C)]`, ensuring a well-defined, packed layout without
+        //   padding.
         // - All fields are contiguous arrays of `u8` (1-byte alignment), guaranteeing the struct's
         //   in-memory representation is exactly the concatenation of its fields' bytes.
         // - `size_of::<Handshake>()` matches the sum of all field sizes (1 + 19 + 8 + 20 + 20 = 68
