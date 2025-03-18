@@ -51,6 +51,7 @@ impl Handshake {
         let bytes = self as *const Self as *const [u8; Self::SIZE];
 
         // SAFETY:
+        //
         // - The struct is marked `#[repr(C)]`, ensuring a well-defined, packed layout without padding.
         // - All fields are contiguous arrays of `u8` (1-byte alignment), guaranteeing the struct's
         //   in-memory representation is exactly the concatenation of its fields' bytes.

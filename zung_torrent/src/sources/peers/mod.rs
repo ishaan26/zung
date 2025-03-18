@@ -69,27 +69,30 @@ impl Peer {
             .timeout(TIMEOUT_DURATION)
             .await??;
 
+        // Check if the size of received message is the same as the sent.
         ensure!(
             read == std::mem::size_of::<Handshake>(),
             "Handshake: required bytes not sent by the peer"
         );
 
-        let rec_handshake = Handshake::from_bytes(buff);
+        let recv_handshake = Handshake::from_bytes(buff);
 
-        ensure!(rec_handshake.pstr() == Handshake::PROTOCOL_V1);
-        ensure!(rec_handshake.pstrlen() == Handshake::PROTOCOL_V1.len() as u8);
-        ensure!(rec_handshake.info_hash() == handshake.info_hash());
+        // Validate the data received.
+        ensure!(recv_handshake.pstr() == Handshake::PROTOCOL_V1);
+        ensure!(recv_handshake.pstrlen() == Handshake::PROTOCOL_V1.len() as u8);
+        ensure!(recv_handshake.info_hash() == handshake.info_hash());
 
         info!("Handshake complete: {}", &self.addr);
 
         Ok(stream)
     }
 
+    /// Returns the [`SocketAddr`] of the Peer.
     pub const fn get_addr(&self) -> SocketAddr {
         self.addr
     }
 
-    /// Sets the peer state to`connected`.
+    /// Sets the peer state to `connected`.
     pub fn set_connected(&self) {
         self.connected.store(true, Ordering::Relaxed);
     }
@@ -99,10 +102,19 @@ impl Peer {
         self.connected.load(Ordering::Relaxed)
     }
 
+    /// Get ip addr octests
     fn get_octets(&self) -> Vec<u8> {
         match &self.addr {
-            SocketAddr::V4(socket_addr_v4) => socket_addr_v4.ip().octets().to_vec(),
-            SocketAddr::V6(socket_addr_v6) => socket_addr_v6.ip().octets().to_vec(),
+            SocketAddr::V4(socket_addr_v4) => {
+                let mut buff = Vec::with_capacity(4);
+                buff.extend(socket_addr_v4.ip().octets());
+                buff
+            }
+            SocketAddr::V6(socket_addr_v6) => {
+                let mut buff = Vec::with_capacity(16);
+                buff.extend(socket_addr_v6.ip().octets());
+                buff
+            }
         }
     }
 }

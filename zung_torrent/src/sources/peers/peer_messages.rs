@@ -157,7 +157,7 @@ impl PeerMessage<()> {
 
 impl<T> PeerMessage<T>
 where
-    T: PeerMessagePayload + Sized,
+    T: PeerMessagePayload,
 {
     /// Calculates the size of the message in bytes.
     ///
