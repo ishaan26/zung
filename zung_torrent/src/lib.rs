@@ -88,32 +88,6 @@ impl TorrentArgs {
                         }
                     }
                 }
-
-                let total_trackers = torrent
-                    .sources()
-                    .tracker_list()
-                    .unwrap()
-                    .number_of_trackers();
-
-                let connected_trackers = torrent
-                    .sources()
-                    .tracker_list()
-                    .unwrap()
-                    .number_of_connected();
-
-                let peers_list = torrent.sources().peers_list();
-
-                let mut connected_peers = 0;
-                for peer in &peers_list {
-                    if peer.is_connected() {
-                        connected_peers += 1;
-                    }
-                }
-
-                dbg!(total_trackers);
-                dbg!(connected_trackers);
-                dbg!(peers_list.len());
-                dbg!(connected_peers);
             }
         }
 

@@ -103,6 +103,10 @@ fn _set_subscribers_n() {
         // all spans/events with a level higher than TRACE (e.g, info, warn, etc.)
         // will be written to stdout.
         .with_env_filter("zung=trace")
+        // .without_time()
+        .with_target(false)
+        .with_line_number(false)
+        .compact()
         .init(); // sets this to be the default, global subscriber for this application.
 }
 

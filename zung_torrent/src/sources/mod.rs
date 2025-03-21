@@ -14,7 +14,6 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::meta_info::{InfoHashEncoded, MetaInfo};
 use http_seeders::{HttpSeeder, HttpSeedersList};
-use peers::Peer;
 use trackers::{Tracker, TrackersList};
 
 /// Representing different data sources (trackers and HTTP seeders) for a torrent.
@@ -215,19 +214,19 @@ impl DownloadSources {
         match &self.state {
             DownloadSourcesState::Trackers { tracker_list }
             | DownloadSourcesState::Hybrid { tracker_list, .. } => {
-                tracker_list.connect_all(info_hash).await;
+                // tracker_list.connect_all(info_hash).await;
+
+                tracker_list
+                    .announce_all(info_hash)
+                    .handshake_all()
+                    .await
+                    .download()
+                    .await;
+
                 Ok(())
             }
 
             DownloadSourcesState::HttpSeeders { .. } => todo!(),
-        }
-    }
-
-    pub fn peers_list(&self) -> Vec<Peer> {
-        match &self.state {
-            DownloadSourcesState::Trackers { tracker_list }
-            | DownloadSourcesState::Hybrid { tracker_list, .. } => tracker_list.peers_list(),
-            DownloadSourcesState::HttpSeeders { .. } => Vec::new(),
         }
     }
 }

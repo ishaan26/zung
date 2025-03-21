@@ -5,8 +5,6 @@
 mod request;
 mod response;
 
-use rayon::iter::ParallelIterator;
-use rayon::iter::{IntoParallelRefIterator, ParallelExtend};
 pub use request::*;
 pub use response::*;
 use tokio::sync::Semaphore;
@@ -14,9 +12,7 @@ use tokio::sync::Semaphore;
 use super::peers::Peer;
 use crate::meta_info::InfoHashEncoded;
 
-use anyhow::{anyhow, bail, Result};
-use colored::Colorize;
-use tracing::{info, instrument, warn};
+use anyhow::{bail, Result};
 
 use dashmap::DashSet;
 use futures::{stream::FuturesUnordered, StreamExt};
@@ -28,200 +24,52 @@ use std::net::Ipv4Addr;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 
-const CONCURRENT_CONNECTION_LIMIT: usize = 20;
-
 /////////////////////////////////////////////////////////////////////////////
-//                             LIST OF TRACKERS
+//                             TRACKER URL
 /////////////////////////////////////////////////////////////////////////////
 
-/// A list of all the [`Tracker`]s contained in the [`MetaInfo`](crate::MetaInfo) file.
+/// A warpper for the url (http or udp) of a given tracker.
 #[derive(Debug)]
-pub struct TrackersList {
-    list: Vec<Tracker>,
-    num_connected: Arc<AtomicU32>,
-    peers: Arc<DashSet<Peer>>,
+enum TrackerUrl {
+    // TODO: Look into SmallStr
+    Http(Arc<str>),
+    Udp(Arc<str>),
+    Invalid(Arc<str>),
 }
 
-impl TrackersList {
-    pub(crate) fn new(list: Vec<Tracker>) -> Self {
-        TrackersList {
-            list,
-            num_connected: Arc::new(AtomicU32::new(0)),
-            peers: Arc::new(DashSet::new()),
-        }
-    }
-
-    pub fn as_slice(&self) -> &[Tracker] {
-        &self.list
-    }
-
-    pub fn peers_list(&self) -> Vec<Peer> {
-        let mut list = Vec::with_capacity(self.peers.len());
-        let iter = self.peers.par_iter().map(|p| p.clone());
-        list.par_extend(iter);
-        list
-    }
-
-    pub fn number_of_trackers(&self) -> usize {
-        self.list.len()
-    }
-
-    /// Retruns the number of connected trackers.
-    pub fn number_of_connected(&self) -> u32 {
-        self.num_connected.load(Ordering::Relaxed)
-    }
-
-    /// Announce to all trackers in the torrent
-    #[instrument(skip_all)]
-    pub async fn connect_all(&self, info_hash: InfoHashEncoded) {
-        // Announce to all trackers and get unresolved future that yeilds connected trackers.
-        self.announce_loop(info_hash)
-            .await
-            .for_each_concurrent(None, |connected_tracker| async move {
-                // Remove the JoinError
-                match connected_tracker.map_err(|e| anyhow!(e)).and_then(|c| c) {
-                    Ok(connected_tracker) => {
-                        info!("Connected! {}", connected_tracker.url());
-                        match self.handshake_loop(&connected_tracker, info_hash).await {
-                            Ok(mut futures) => while (futures.next().await).is_some() {},
-                            Err(e) => warn!("{}: {}", e.to_string(), connected_tracker.url()),
-                        }
-                    }
-                    Err(e) => warn!("{e}"),
-                }
-            })
-            .await;
-    }
-
-    /// Returns an iterator over the lracker list.
-    ///
-    /// The iterator yields a reference to all [`Tracker`] (s) in the tracker list from start to
-    /// end.
-    pub fn iter(&self) -> TrackersListIter<'_> {
-        TrackersListIter::new(self)
-    }
-
-    // *******************************************************
-    //                     INTERNAL FUNCTIONS
-    // *******************************************************
-
-    /// Separated function that just returns a pending join handle.
-    #[instrument(skip_all)]
-    async fn announce_loop(
-        &self,
-        info_hash: InfoHashEncoded,
-    ) -> FuturesUnordered<JoinHandle<Result<Tracker>>> {
-        let counter = Arc::clone(&self.num_connected);
-
-        self.list
-            .iter()
-            .cloned() // This performs an Arc clone on the interal type.
-            .map(|tracker| -> JoinHandle<Result<Tracker>> {
-                let num = Arc::clone(&counter);
-                // TODO: Think reannouncing.
-                tokio::spawn(async move {
-                    match tracker.announce(info_hash).await {
-                        Ok(_) => {
-                            num.fetch_add(1, Ordering::SeqCst);
-                            return Ok(tracker);
-                        }
-                        Err(e) => {
-                            warn!("{}: {}", tracker.url().italic(), e.to_string());
-                        }
-                    }
-                    Ok(tracker)
-                })
-            })
-            .collect()
-    }
-
-    #[instrument(skip_all)]
-    async fn handshake_loop(
-        &self,
-        connected_tracker: &Tracker,
-        info_hash: InfoHashEncoded,
-    ) -> Result<FuturesUnordered<JoinHandle<Result<Peer>>>> {
-        let peers_hashset = Arc::clone(&self.peers);
-
-        // Limit the number of outgoing requests being sent at the same time
-        let semaphore = Arc::new(Semaphore::new(CONCURRENT_CONNECTION_LIMIT));
-
-        let futures = FuturesUnordered::new();
-
-        // Get peers list from the connected tracker.
-        let guraded_response = connected_tracker.get_response_guarded();
-        let peers_list = guraded_response.get_peers_list();
-
-        match peers_list {
-            None => warn!("{} doesnot contain any peers", connected_tracker.url()),
-            Some(list) if list.num_of_peers() == 0 => {
-                warn!("{} doesnot contain any peers", connected_tracker.url())
-            }
-            Some(list) => {
-                for peer in list.iter() {
-                    // If the unique peer is inserted in the hashset, spawn a thread to
-                    // handshake with it.
-                    if peers_hashset.insert(peer.clone()) {
-                        let peer = peer.clone();
-                        let semaphore = semaphore.clone();
-
-                        let handle = tokio::spawn(async move {
-                            let _permit = semaphore.acquire().await.unwrap();
-                            info!("{} has been inserted", peer.get_addr());
-
-                            let peer = match peer.handshake(info_hash).await {
-                                Ok(_) => {
-                                    peer.set_connected();
-                                    Ok(peer)
-                                }
-                                Err(e) => {
-                                    warn!("{}", e.to_string());
-                                    Err(e)
-                                }
-                            };
-
-                            drop(_permit);
-
-                            peer
-                        });
-
-                        futures.push(handle);
-                    }
-                }
-            }
-        }
-
-        Ok(futures)
-    }
-}
-
-/// An Iterator over the [`TrackersList`] which yeilds a reference to the [`Tracker`].
-pub struct TrackersListIter<'a> {
-    iter: std::slice::Iter<'a, Tracker>,
-}
-
-impl<'a> TrackersListIter<'a> {
-    pub fn new(list: &'a TrackersList) -> Self {
-        Self {
-            iter: list.list.iter(),
+impl Clone for TrackerUrl {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Http(arg0) => Self::Http(Arc::clone(arg0)),
+            Self::Udp(arg0) => Self::Udp(Arc::clone(arg0)),
+            Self::Invalid(arg0) => Self::Invalid(Arc::clone(arg0)),
         }
     }
 }
 
-impl<'a> Iterator for TrackersListIter<'a> {
-    type Item = &'a Tracker;
+impl TrackerUrl {
+    fn new(tracker_url: &str) -> Self {
+        if tracker_url.starts_with("http") {
+            Self::Http(Arc::from(tracker_url))
+        } else if tracker_url.starts_with("udp") {
+            Self::Udp(Arc::from(tracker_url))
+        } else {
+            Self::Invalid(Arc::from(tracker_url))
+        }
+    }
 
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
+    fn as_str(&self) -> &str {
+        match self {
+            TrackerUrl::Http(s) => s,
+            TrackerUrl::Udp(s) => s,
+            TrackerUrl::Invalid(s) => s,
+        }
     }
 }
 
-impl<'a> IntoIterator for &'a TrackersList {
-    type Item = &'a Tracker;
-    type IntoIter = TrackersListIter<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        TrackersListIter::new(self)
+impl std::fmt::Display for TrackerUrl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 
@@ -249,7 +97,7 @@ pub struct Tracker {
 struct TrackerInner {
     request: Mutex<TrackerRequest>,
     response: Mutex<TrackerResponse>,
-    connected: AtomicBool,
+    announced: AtomicBool,
     trys: AtomicU32,
 }
 
@@ -273,7 +121,7 @@ impl Tracker {
         let inner = TrackerInner {
             request: Mutex::new(TrackerRequest::empty()),
             response: Mutex::new(TrackerResponse::empty()),
-            connected: AtomicBool::new(false),
+            announced: AtomicBool::new(false),
             trys: AtomicU32::new(0),
         };
 
@@ -294,7 +142,6 @@ impl Tracker {
     ///
     /// - In case the Tracker contains a Udp url, this will perform the [`UdpConnectRequest`] (see
     ///   its documentation for more information) to obtain the `connection_id` from the tracker.
-    ///
     pub async fn tracker_request(&self, info_hash: InfoHashEncoded) -> Result<TrackerRequest> {
         match &self.url {
             TrackerUrl::Http(url) => Ok(TrackerRequest {
@@ -341,13 +188,17 @@ impl Tracker {
         let request = self.tracker_request(info_hash).await?;
 
         let response = request.make_announce_request().await?;
-        self.inner.connected.store(true, Ordering::Relaxed);
+        self.inner.announced.store(true, Ordering::Relaxed);
 
         self.set_request(request)?;
 
         self.set_response(response)?;
 
         Ok(())
+    }
+
+    pub fn set_announced(&self, value: bool) {
+        self.inner.announced.store(value, Ordering::Relaxed);
     }
 
     pub fn get_response_guarded(&self) -> MutexGuard<'_, TrackerResponse> {
@@ -359,14 +210,14 @@ impl Tracker {
     }
 
     pub fn is_connected(&self) -> bool {
-        self.inner.connected.load(Ordering::Relaxed)
+        self.inner.announced.load(Ordering::Relaxed)
     }
 
     pub fn trys(&self) -> u32 {
         self.inner.trys.load(Ordering::Relaxed)
     }
 
-    pub(crate) fn set_request(&self, request: TrackerRequest) -> Result<()> {
+    fn set_request(&self, request: TrackerRequest) -> Result<()> {
         let mut guard = self.inner.request.lock();
 
         *guard = request;
@@ -374,7 +225,7 @@ impl Tracker {
         Ok(())
     }
 
-    pub(crate) fn set_response(&self, response: TrackerResponse) -> Result<()> {
+    fn set_response(&self, response: TrackerResponse) -> Result<()> {
         let mut guard = self.inner.response.lock();
 
         *guard = response;
@@ -384,46 +235,262 @@ impl Tracker {
 }
 
 /////////////////////////////////////////////////////////////////////////////
-//                             TRACKER URL
+//                             LIST OF TRACKERS
 /////////////////////////////////////////////////////////////////////////////
 
-// TODO: Look into SmallStr
+/// A list of all the [`Tracker`]s contained in the [`MetaInfo`](crate::MetaInfo) file.
 #[derive(Debug)]
-enum TrackerUrl {
-    Http(Arc<str>),
-    Udp(Arc<str>),
-    Invalid(Arc<str>),
+pub struct TrackersList {
+    list: Vec<Tracker>,
+    num_connected: Arc<AtomicU32>,
 }
 
-impl Clone for TrackerUrl {
-    fn clone(&self) -> Self {
-        match self {
-            Self::Http(arg0) => Self::Http(Arc::clone(arg0)),
-            Self::Udp(arg0) => Self::Udp(Arc::clone(arg0)),
-            Self::Invalid(arg0) => Self::Invalid(Arc::clone(arg0)),
+impl TrackersList {
+    pub(crate) fn new(list: Vec<Tracker>) -> Self {
+        TrackersList {
+            list,
+            num_connected: Arc::new(AtomicU32::new(0)),
+        }
+    }
+
+    pub fn as_slice(&self) -> &[Tracker] {
+        &self.list
+    }
+
+    pub fn number_of_trackers(&self) -> usize {
+        self.list.len()
+    }
+
+    /// Retruns the number of connected trackers.
+    pub fn number_of_connected(&self) -> u32 {
+        self.num_connected.load(Ordering::Relaxed)
+    }
+
+    /// Returns an iterator over the lracker list.
+    ///
+    /// The iterator yields a reference to all [`Tracker`] (s) in the tracker list from start to
+    /// end.
+    pub fn iter(&self) -> TrackersListIter<'_> {
+        TrackersListIter::new(self)
+    }
+
+    #[tracing::instrument(name = "Announce All", skip(self, info_hash))]
+    pub fn announce_all(&self, info_hash: InfoHashEncoded) -> Announced {
+        let connected_counter = Arc::new(AtomicU32::new(0));
+        let unconnected_counter = Arc::new(AtomicU32::new(0));
+
+        let futures: FuturesUnordered<_> = self
+            .list
+            .iter()
+            .cloned() // This performs an Arc clone on the interal type.
+            .map(|tracker| -> JoinHandle<Tracker> {
+                let connected_counter = Arc::clone(&connected_counter);
+                let unconnected_counter = Arc::clone(&unconnected_counter);
+
+                tracing::debug!(tracker_url = %tracker.url, "Announcing to tracker");
+
+                let span = tracing::span!(tracing::Level::INFO, "Announce");
+
+                // TODO: Think reannouncing.
+                tokio::spawn(async move {
+                    let _enter = span.enter();
+
+                    match tracker.announce(info_hash).await {
+                        Ok(_) => {
+                            connected_counter.fetch_add(1, Ordering::SeqCst);
+
+                            tracing::debug!(
+                                tracker = %tracker.url,
+                                "Successfully Announced"
+                            );
+
+                            tracker.set_announced(true);
+                            tracker
+                        }
+                        Err(e) => {
+                            unconnected_counter.fetch_add(1, Ordering::SeqCst);
+
+                            tracing::warn!(
+                                tracker = %tracker.url,
+                                "Unable to Announce: {e}"
+                            );
+
+                            tracker.set_announced(false);
+                            tracker
+                        }
+                    }
+                })
+            })
+            .collect();
+
+        Announced {
+            list: futures,
+            info_hash,
         }
     }
 }
 
-impl TrackerUrl {
-    fn new(tracker_url: &str) -> Self {
-        if tracker_url.starts_with("http") {
-            Self::Http(Arc::from(tracker_url))
-        } else if tracker_url.starts_with("udp") {
-            Self::Udp(Arc::from(tracker_url))
-        } else {
-            Self::Invalid(Arc::from(tracker_url))
-        }
-    }
+/// An Iterator over the [`TrackersList`] which yeilds a reference to the [`Tracker`].
+pub struct TrackersListIter<'a> {
+    iter: std::slice::Iter<'a, Tracker>,
+}
 
-    fn as_str(&self) -> &str {
-        match self {
-            TrackerUrl::Http(s) => s,
-            TrackerUrl::Udp(s) => s,
-            TrackerUrl::Invalid(s) => s,
+impl<'a> TrackersListIter<'a> {
+    pub fn new(list: &'a TrackersList) -> Self {
+        Self {
+            iter: list.list.iter(),
         }
     }
 }
+
+impl<'a> Iterator for TrackersListIter<'a> {
+    type Item = &'a Tracker;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
+    }
+}
+
+impl<'a> IntoIterator for &'a TrackersList {
+    type Item = &'a Tracker;
+    type IntoIter = TrackersListIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        TrackersListIter::new(self)
+    }
+}
+
+/////////////////////////////////////////////////////////////////////////////
+//                          Announced Trackers
+/////////////////////////////////////////////////////////////////////////////
+
+pub struct Announced {
+    list: FuturesUnordered<JoinHandle<Tracker>>,
+    info_hash: InfoHashEncoded,
+}
+
+impl Announced {
+    pub async fn handshake_all(mut self) -> Handshaken {
+        let peers_buff = DashSet::new();
+
+        // Limit the number of outgoing requests being sent at the same time
+        let semaphore = Arc::new(Semaphore::new(100));
+
+        let futures = FuturesUnordered::new();
+
+        while let Some(tracker) = self.list.next().await {
+            match tracker {
+                Err(e) => {
+                    tracing::error!("Announce thread failed: {e}");
+                    continue;
+                }
+                Ok(announced_tracker) => {
+                    if !announced_tracker.is_connected() {
+                        continue;
+                    }
+
+                    let guraded_response = announced_tracker.get_response_guarded();
+                    let peers_list = guraded_response.get_peers_list();
+
+                    match peers_list {
+                        None => {
+                            tracing::warn!(
+                                tracker_url = %announced_tracker.url,
+                                "Tracker does not contain any peers"
+                            );
+                        }
+                        Some(list) if list.num_of_peers() == 0 => {
+                            tracing::warn!(
+                                tracker_url = %announced_tracker.url,
+                                "Tracker sent an empty peers list"
+                            );
+                        }
+                        Some(list) => {
+                            for peer in list.iter() {
+                                // If the unique peer is inserted in the hashset, spawn a thread to
+                                // handshake with it.
+                                if peers_buff.insert(peer.clone()) {
+                                    let peer = peer.clone(); // This performs an Arc Clone
+                                    let semaphore = semaphore.clone();
+
+                                    let span = tracing::span!(tracing::Level::INFO, "Handshake");
+
+                                    let handle = tokio::spawn(async move {
+                                        let _permit = semaphore.acquire().await.unwrap();
+                                        let _enter = span.enter();
+
+                                        tracing::debug!(
+                                        peer = %peer.get_addr(),
+                                        "Unique peer found"
+                                        );
+
+                                        let peer = match peer.handshake(self.info_hash).await {
+                                            Ok(_) => {
+                                                peer.set_connected();
+
+                                                tracing::info!(
+                                                    peer = %peer.get_addr(),
+                                                    "Connected to Peer"
+                                                );
+
+                                                peer
+                                            }
+                                            Err(e) => {
+                                                tracing::warn!(
+                                                    peer = %peer.get_addr(),
+                                                    "Unable to connect to Peer: {}",
+                                                    e.to_string()
+                                                );
+                                                peer
+                                            }
+                                        };
+
+                                        drop(_permit);
+
+                                        peer
+                                    });
+
+                                    futures.push(handle);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Handshaken { list: futures }
+    }
+}
+
+/////////////////////////////////////////////////////////////////////////////
+//                              Handshaken Peers
+/////////////////////////////////////////////////////////////////////////////
+
+#[derive(Debug)]
+pub struct Handshaken {
+    list: FuturesUnordered<JoinHandle<Peer>>,
+}
+
+impl Handshaken {
+    #[tracing::instrument(skip_all)]
+    pub async fn download(self) {
+        self.list
+            .for_each_concurrent(None, async |peer| match peer {
+                Ok(p) => {
+                    if p.is_connected() {
+                        tracing::info!("Initiating Download")
+                    }
+                }
+                Err(e) => tracing::error!("{e}"),
+            })
+            .await;
+    }
+}
+
+/////////////////////////////////////////////////////////////////////////////
+//                              Tests
+/////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tracker_tests {

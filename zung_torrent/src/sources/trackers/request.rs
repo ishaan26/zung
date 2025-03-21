@@ -511,7 +511,7 @@ impl UdpConnectRequest {
             .expect("Faliure in converting Bytes")
     }
 
-    #[instrument(name = "udp_connect_request", skip(self))]
+    #[instrument(name = "udp_connect_request", skip(self, socket))]
     pub(crate) async fn connect_with(
         &self,
         udp_url: &str,
