@@ -113,7 +113,7 @@ impl DownloadSources {
     /// # Example
     ///
     /// ```
-    ///use zung_torrent::sources::DownloadSources;
+    /// use zung_torrent::sources::DownloadSources;
     ///
     /// # fn ughhh(download_sources: DownloadSources) {
     /// if let Some(tracker_list) = download_sources.tracker_list() {

@@ -45,7 +45,7 @@ use crate::{meta_info::InfoHashEncoded, TIMEOUT_DURATION};
 #[derive(Debug)]
 pub struct Peer {
     addr: SocketAddr,
-    connected: Arc<AtomicBool>,
+    handshaken: Arc<AtomicBool>,
 }
 
 impl Peer {
@@ -95,12 +95,12 @@ impl Peer {
 
     /// Sets the peer state to `connected`.
     pub fn set_connected(&self) {
-        self.connected.store(true, Ordering::Relaxed);
+        self.handshaken.store(true, Ordering::Relaxed);
     }
 
     /// Check if the peer is connected or not.
-    pub fn is_connected(&self) -> bool {
-        self.connected.load(Ordering::Relaxed)
+    pub fn is_handshaken(&self) -> bool {
+        self.handshaken.load(Ordering::Relaxed)
     }
 
     /// Get ip addr octests
@@ -124,7 +124,7 @@ impl Clone for Peer {
     fn clone(&self) -> Self {
         Self {
             addr: self.addr,
-            connected: Arc::clone(&self.connected),
+            handshaken: Arc::clone(&self.handshaken),
         }
     }
 }
@@ -171,7 +171,7 @@ impl From<SocketAddrV4> for Peer {
     fn from(value: SocketAddrV4) -> Self {
         Self {
             addr: SocketAddr::from(value),
-            connected: Arc::new(AtomicBool::new(false)),
+            handshaken: Arc::new(AtomicBool::new(false)),
             // TODO: use TryFrom
         }
     }
@@ -181,7 +181,7 @@ impl From<SocketAddrV6> for Peer {
     fn from(value: SocketAddrV6) -> Self {
         Self {
             addr: SocketAddr::from(value),
-            connected: Arc::new(AtomicBool::new(false)),
+            handshaken: Arc::new(AtomicBool::new(false)),
         }
     }
 }

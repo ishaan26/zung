@@ -306,19 +306,13 @@ impl TrackersList {
 
         match tracker.announce(info_hash).await {
             Ok(_) => {
-                tracing::debug!(
-                    tracker = %tracker.url,
-                    "Successfully Announced"
-                );
+                tracing::debug!( tracker = %tracker.url, "Successfully Announced");
 
                 tracker.set_announced(true);
                 tracker
             }
             Err(e) => {
-                tracing::warn!(
-                    tracker = %tracker.url,
-                    "Unable to Announce: {e}"
-                );
+                tracing::warn!( tracker = %tracker.url, "Unable to Announce: {e}");
 
                 tracker.set_announced(false);
                 tracker
@@ -487,7 +481,7 @@ impl Handshaken {
         self.list
             .for_each_concurrent(None, async |peer| match peer {
                 Ok(p) => {
-                    if p.is_connected() {
+                    if p.is_handshaken() {
                         tracing::info!("Initiating Download")
                     }
                 }
