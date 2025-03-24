@@ -4,6 +4,12 @@ use zung_mini::MiniArgs;
 use zung_parsers::ParserArgs;
 use zung_torrent::TorrentArgs;
 
+#[cfg(debug_assertions)]
+const TRACE_LEVEL: &str = "zung=trace";
+
+#[cfg(not(debug_assertions))]
+const TRACE_LEVEL: &str = "zung=info";
+
 #[derive(Parser)]
 #[command(author, version, about, long_about = None, styles=get_styles())] // Read from `Cargo.toml`
 struct Cli {
@@ -102,7 +108,7 @@ fn _set_subscribers_n() {
     tracing_subscriber::fmt()
         // all spans/events with a level higher than TRACE (e.g, info, warn, etc.)
         // will be written to stdout.
-        .with_env_filter("zung=trace")
+        .with_env_filter(TRACE_LEVEL)
         // .without_time()
         .with_target(false)
         .with_line_number(false)
