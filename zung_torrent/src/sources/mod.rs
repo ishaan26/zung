@@ -9,6 +9,8 @@ pub mod http_seeders;
 pub mod peers;
 pub mod trackers;
 
+use std::sync::atomic::AtomicUsize;
+
 use anyhow::Result;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
@@ -52,6 +54,8 @@ impl DownloadSources {
     /// way to access this is by using the [`sources`](crate::Client::sources) method.
     /// But you do you! :).
     pub fn new(meta_info: &MetaInfo) -> Self {
+        let size = AtomicUsize::new(meta_info.info().torrent_size());
+
         let tracker_list = match meta_info.announce_list() {
             Some(announce_list) => announce_list
                 .par_iter()
@@ -82,13 +86,13 @@ impl DownloadSources {
                     if http_seeder_list.is_empty() {
                         return Self {
                             state: DownloadSourcesState::Trackers {
-                                tracker_list: TrackersList::new(tracker_list),
+                                tracker_list: TrackersList::new(tracker_list, size),
                             },
                         };
                     }
                     DownloadSources {
                         state: DownloadSourcesState::Hybrid {
-                            tracker_list: TrackersList::new(tracker_list),
+                            tracker_list: TrackersList::new(tracker_list, size),
                             http_seeder_list,
                         },
                     }
@@ -102,7 +106,7 @@ impl DownloadSources {
             }
             None => DownloadSources {
                 state: DownloadSourcesState::Trackers {
-                    tracker_list: TrackersList::new(tracker_list),
+                    tracker_list: TrackersList::new(tracker_list, size),
                 },
             },
         }

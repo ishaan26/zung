@@ -21,7 +21,7 @@ use tokio::net::UdpSocket;
 use tokio::task::JoinHandle;
 
 use std::net::Ipv4Addr;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 /////////////////////////////////////////////////////////////////////////////
@@ -142,12 +142,16 @@ impl Tracker {
     ///
     /// - In case the Tracker contains a Udp url, this will perform the [`UdpConnectRequest`] (see
     ///   its documentation for more information) to obtain the `connection_id` from the tracker.
-    pub async fn tracker_request(&self, info_hash: InfoHashEncoded) -> Result<TrackerRequest> {
+    pub async fn tracker_request(
+        &self,
+        info_hash: InfoHashEncoded,
+        left_pieces: usize,
+    ) -> Result<TrackerRequest> {
         match &self.url {
             TrackerUrl::Http(url) => Ok(TrackerRequest {
                 state: TrackerRequestState::Http {
                     url: url.clone(),
-                    params: HttpTrackerRequestParams::new(info_hash),
+                    params: HttpTrackerRequestParams::new(info_hash, left_pieces),
                 },
             }),
             TrackerUrl::Udp(url) => {
@@ -167,7 +171,7 @@ impl Tracker {
                         url: Arc::clone(url),
                         connection_id,
                         socket,
-                        params: UdpTrackerRequestParams::new(connection_id, info_hash),
+                        params: UdpTrackerRequestParams::new(connection_id, info_hash, left_pieces),
                     },
                 })
             }
@@ -182,12 +186,12 @@ impl Tracker {
     ///
     /// # Parameters
     /// - `info_hash`: The encoded info hash for the torrent.
-    pub async fn announce(&self, info_hash: InfoHashEncoded) -> Result<()> {
+    pub async fn announce(&self, info_hash: InfoHashEncoded, left_pieces: usize) -> Result<()> {
         self.inner.trys.fetch_add(1, Ordering::SeqCst);
 
-        let request = self.tracker_request(info_hash).await?;
+        let request = self.tracker_request(info_hash, left_pieces).await?;
 
-        let response = request.make_announce_request().await?;
+        let response = request.make_tracker_request().await?;
         self.inner.announced.store(true, Ordering::Relaxed);
 
         self.set_request(request)?;
@@ -243,13 +247,15 @@ impl Tracker {
 pub struct TrackersList {
     list: Vec<Tracker>,
     num_connected: Arc<AtomicU32>,
+    left_pieces: Arc<AtomicUsize>,
 }
 
 impl TrackersList {
-    pub(crate) fn new(list: Vec<Tracker>) -> Self {
+    pub(crate) fn new(list: Vec<Tracker>, left_pieces: AtomicUsize) -> Self {
         TrackersList {
             list,
             num_connected: Arc::new(AtomicU32::new(0)),
+            left_pieces: Arc::new(left_pieces),
         }
     }
 
@@ -266,6 +272,10 @@ impl TrackersList {
         self.num_connected.load(Ordering::Relaxed)
     }
 
+    pub fn left_pieces(&self) -> usize {
+        self.left_pieces.load(Ordering::SeqCst)
+    }
+
     /// Returns an iterator over the lracker list.
     ///
     /// The iterator yields a reference to all [`Tracker`] (s) in the tracker list from start to
@@ -277,6 +287,8 @@ impl TrackersList {
     // TODO: Add counters
     #[tracing::instrument(name = "Announce All", skip(self, info_hash))]
     pub fn announce_all(&self, info_hash: InfoHashEncoded) -> Announced {
+        let left_pieces = self.left_pieces();
+
         let futures: FuturesUnordered<_> = self
             .list
             .iter()
@@ -285,7 +297,7 @@ impl TrackersList {
                 // TODO: Think reannouncing.
                 tokio::spawn(async move {
                     // Created a separate Functions because tracing doesnot work otherwise.
-                    Self::announce_to_tracker(tracker, info_hash).await
+                    Self::announce_to_tracker(tracker, info_hash, left_pieces).await
                 })
             })
             .collect();
@@ -301,10 +313,14 @@ impl TrackersList {
         skip(info_hash)
         fields(tracker=%tracker.url)
     )]
-    async fn announce_to_tracker(tracker: Tracker, info_hash: InfoHashEncoded) -> Tracker {
+    async fn announce_to_tracker(
+        tracker: Tracker,
+        info_hash: InfoHashEncoded,
+        left_pieces: usize,
+    ) -> Tracker {
         tracing::debug!("Announcing to tracker");
 
-        match tracker.announce(info_hash).await {
+        match tracker.announce(info_hash, left_pieces).await {
             Ok(_) => {
                 tracing::debug!( tracker = %tracker.url, "Successfully Announced");
 
@@ -507,7 +523,7 @@ mod tracker_tests {
         let sample_url = "http://example.com/announce";
         let info_hash = InfoHash::new(b"test info_hash").as_encoded();
         let tracker = Tracker::new(sample_url);
-        let tracker_request = tracker.tracker_request(info_hash).await.unwrap();
+        let tracker_request = tracker.tracker_request(info_hash, 0).await.unwrap();
 
         match tracker_request.state() {
             TrackerRequestState::Http { url, params } => {
@@ -534,7 +550,7 @@ mod tracker_tests {
         let url = "http://example.com/announce";
         let info_hash = InfoHash::new(b"test info_hash").as_encoded();
         let tracker = Tracker::new(url);
-        let tracker_request = tracker.tracker_request(info_hash).await.unwrap();
+        let tracker_request = tracker.tracker_request(info_hash, 0).await.unwrap();
 
         // Generate the URL with query parameters
         let generated_url = tracker_request.to_url().unwrap();
@@ -560,7 +576,7 @@ mod tracker_tests {
         let url = "http://example.com/announce";
         let info_hash = InfoHash::new(b"test info_hash").as_encoded();
         let tracker = Tracker::new(url);
-        let mut tracker_request = tracker.tracker_request(info_hash).await.unwrap();
+        let mut tracker_request = tracker.tracker_request(info_hash, 0).await.unwrap();
 
         match &mut tracker_request.state {
             TrackerRequestState::Http { params, .. } => {
@@ -600,7 +616,7 @@ mod tracker_tests {
         let info_hash = InfoHash::new(b"test info_hash").as_encoded();
         let tracker_request = Tracker::new(url);
 
-        let mut tracker_request = tracker_request.tracker_request(info_hash).await.unwrap();
+        let mut tracker_request = tracker_request.tracker_request(info_hash, 0).await.unwrap();
 
         match &mut tracker_request.state {
             TrackerRequestState::Http { params, .. } => {

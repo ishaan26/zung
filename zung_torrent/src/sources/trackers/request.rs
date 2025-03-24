@@ -102,7 +102,7 @@ impl TrackerRequest {
             TrackerRequestState::Http { url, params } => {
                 let announce = url;
                 let info_hash = params.info_hash.to_url_encoded();
-                let peer_id = params.peer_id.to_url_encoded();
+                let peer_id = params.peer_id.to_string();
                 let params = serde_urlencoded::to_string(params)?;
 
                 Ok(format!(
@@ -128,11 +128,12 @@ impl TrackerRequest {
 
     /// Makes the Tracker request and retunrs the Tracker Response.
     #[instrument(skip_all, name = "Tracker Request")]
-    pub(crate) async fn make_announce_request(&self) -> Result<TrackerResponse> {
+    pub(crate) async fn make_tracker_request(&self) -> Result<TrackerResponse> {
         match &self.state() {
             // HTTP request wherein response is recieved as a bencode dictionary.
             TrackerRequestState::Http { .. } => {
                 let url = self.to_url()?;
+
                 let request = timeout(TIMEOUT_DURATION, reqwest::get(&url))
                     .await
                     .with_context(|| format!("Connection Timed Out: {url}"))?
@@ -312,7 +313,7 @@ where
 }
 
 impl HttpTrackerRequestParams {
-    pub(crate) fn new(info_hash: InfoHashEncoded) -> Self {
+    pub(crate) fn new(info_hash: InfoHashEncoded, left: usize) -> Self {
         HttpTrackerRequestParams {
             info_hash,
             peer_id: *PEER_ID,
@@ -320,12 +321,12 @@ impl HttpTrackerRequestParams {
             port: 6881,
             uploaded: 0,
             downloaded: 0,
-            left: 0,
+            left,
             compact: true,
             no_peer_id: false,
             event: Some(Event::Started),
             ip: None,
-            numwant: Some(0),
+            numwant: Some(50),
             key: None,
             trackerid: None,
         }
@@ -373,7 +374,7 @@ pub struct UdpTrackerRequestParams {
 }
 
 impl UdpTrackerRequestParams {
-    pub(crate) fn new(connection_id: i64, info_hash: InfoHashEncoded) -> Self {
+    pub(crate) fn new(connection_id: i64, info_hash: InfoHashEncoded, left: usize) -> Self {
         UdpTrackerRequestParams {
             connection_id,
             action: Action::Announce as i32, // 1 -> Announce
@@ -381,11 +382,11 @@ impl UdpTrackerRequestParams {
             info_hash,
             peer_id: *PEER_ID,
             downloaded: 0,
-            left: 0, // TODO: update this.
+            left: left as i64,
             uploaded: 0,
             event: Event::None as i32,
             ip_address: 0,
-            num_want: -1,
+            num_want: 50,
             key: 0,
             port: 6886,
         }
