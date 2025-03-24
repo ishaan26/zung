@@ -261,11 +261,12 @@ impl Client {
             let size = (npieces * plen) as f64;
 
             println!(
-                "\n{} Number of pieces: {} each {} in size. Total torrent size: {}",
+                "\n{} Number of pieces: {} each {} in size. Total torrent size: {}, Actual file size: {}",
                 "==>".green().bold(),
                 npieces.to_string().bold().cyan(),
                 human_bytes(plen as f64).bold().cyan(),
-                human_bytes(size).bold().cyan()
+                human_bytes(size).bold().cyan(),
+                human_bytes(meta_info.info().torrent_size() as f64).bold().cyan()
             );
         }));
 

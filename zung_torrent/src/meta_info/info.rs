@@ -4,6 +4,7 @@ use std::{
     ops::Deref,
 };
 
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -77,10 +78,10 @@ pub struct Info {
 impl<'a> Info {
     /// Total size of the torrent in bytes;
     pub(crate) fn torrent_size(&self) -> usize {
-        let n_pieces = self.pieces.len();
-        let plen = self.piece_length;
-        // Number of pieces * piece_length of each piece gives us the total size of the torrent.
-        n_pieces * plen
+        match &self.files {
+            Files::SingleFile { length, .. } => *length,
+            Files::MultiFile { files } => files.par_iter().map(|f| f.length).sum(),
+        }
     }
 
     /// Builds the file tree of the torrent file.
