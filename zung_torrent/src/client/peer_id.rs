@@ -1,7 +1,4 @@
-use std::{
-    fmt::Display,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::fmt::Display;
 
 use serde::Serialize;
 
@@ -44,9 +41,9 @@ use serde::Serialize;
 pub struct PeerID {
     start: [u8; 1],
     uid: [u8; 2],
-    pid: [u8; 4],
-    time: [u8; 12],
     end: [u8; 1],
+    pid: [u8; 4],
+    custom: [u8; 12],
 }
 
 impl PeerID {
@@ -63,9 +60,9 @@ impl PeerID {
         Self {
             start: *b"-",
             uid: *b"ZG",
-            pid: get_pid_bytes(),
-            time: get_system_time_bytes(),
             end: *b"-",
+            pid: get_pid_bytes(),
+            custom: *b"061626989696",
         }
     }
 
@@ -83,7 +80,7 @@ impl PeerID {
             start: *b"-",
             uid,
             pid: get_pid_bytes(),
-            time: get_system_time_bytes(),
+            custom: *b"061626989696",
             end: *b"-",
         }
     }
@@ -168,9 +165,9 @@ impl Display for PeerID {
                 "{}{}{}{}{}",
                 std::str::from_utf8_unchecked(&self.start),
                 std::str::from_utf8_unchecked(&self.uid),
-                u32::from_be_bytes(self.pid),
-                usize::from_be_bytes(self.time[..8].try_into().unwrap()),
                 std::str::from_utf8_unchecked(&self.end),
+                u32::from_be_bytes(self.pid),
+                std::str::from_utf8_unchecked(&self.custom[..11]),
             )
         }
     }
@@ -199,7 +196,7 @@ impl TryFrom<&[u8]> for PeerID {
             start: [bytes[0]],
             uid: [bytes[1], bytes[2]],
             pid: bytes[3..7].try_into().unwrap(),
-            time: bytes[7..19].try_into().unwrap(),
+            custom: bytes[7..19].try_into().unwrap(),
             end: [bytes[19]],
         })
     }
@@ -207,18 +204,6 @@ impl TryFrom<&[u8]> for PeerID {
 
 fn get_pid_bytes() -> [u8; 4] {
     std::process::id().to_be_bytes()
-}
-
-fn get_system_time_bytes() -> [u8; 12] {
-    let duration = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Time went backwards");
-
-    let millis = duration.as_nanos().to_be_bytes();
-
-    let mut result = [0u8; 12];
-    result[..12].copy_from_slice(&millis[4..16]);
-    result
 }
 
 #[cfg(test)]
@@ -250,7 +235,7 @@ mod peer_id_tests {
         thread::sleep(Duration::from_millis(100)); // Ensure different timestamp
         let peer_id2 = PeerID::new();
 
-        assert_ne!(peer_id1.time, peer_id2.time);
+        assert_ne!(peer_id1.custom, peer_id2.custom);
     }
 
     #[test]
@@ -281,19 +266,6 @@ mod peer_id_tests {
 
         // Test client identifier in byte array
         assert_eq!(&bytes[1..3], b"ZG");
-    }
-
-    #[test]
-    fn test_system_time_bytes() {
-        let bytes1 = get_system_time_bytes();
-        thread::sleep(Duration::from_millis(1));
-        let bytes2 = get_system_time_bytes();
-
-        // Test length
-        assert_eq!(bytes1.len(), 12);
-
-        // Test that different calls produce different values
-        assert_ne!(bytes1, bytes2);
     }
 
     #[test]
@@ -329,28 +301,8 @@ mod peer_id_tests {
         assert_eq!(&bytes[0..1], &peer_id.start);
         assert_eq!(&bytes[1..3], &peer_id.uid);
         assert_eq!(&bytes[3..7], &peer_id.pid);
-        assert_eq!(&bytes[7..19], &peer_id.time);
+        assert_eq!(&bytes[7..19], &peer_id.custom);
         assert_eq!(&bytes[19..20], &peer_id.end);
-    }
-
-    #[test]
-    fn test_time_bytes_format() {
-        let bytes = get_system_time_bytes();
-
-        // Create a new duration from the bytes
-        let secs_bytes = &bytes[..6];
-        let nanos_bytes = &bytes[6..];
-
-        // Verify we can reconstruct a valid timestamp
-        let mut secs_arr = [0u8; 8];
-        secs_arr[..6].copy_from_slice(secs_bytes);
-
-        let mut nanos_arr = [0u8; 4];
-        nanos_arr[..3].copy_from_slice(&nanos_bytes[..3]);
-
-        // These shouldn't panic if the bytes are valid
-        let _secs = u64::from_le_bytes(secs_arr);
-        let _nanos = u32::from_le_bytes(nanos_arr);
     }
 
     #[test]
@@ -360,7 +312,7 @@ mod peer_id_tests {
             start: *b"-",
             uid: *b"ZG",
             pid: [49, 50, 51, 52], // '1234' in ASCII
-            time: [53, 54, 55, 56, 57, 65, 66, 67, 68, 69, 70, 71], // '56789ABCDEFG' in ASCII
+            custom: [53, 54, 55, 56, 57, 65, 66, 67, 68, 69, 70, 71], // '56789ABCDEFG' in ASCII
             end: *b"-",
         };
 
