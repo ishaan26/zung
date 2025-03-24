@@ -49,6 +49,7 @@ pub struct Peer {
 }
 
 impl Peer {
+    #[tracing::instrument(skip_all)]
     pub async fn handshake(&self, info_hash: InfoHashEncoded) -> Result<TcpStream> {
         let mut stream = TcpStream::connect(self.addr)
             .timeout(TIMEOUT_DURATION)
