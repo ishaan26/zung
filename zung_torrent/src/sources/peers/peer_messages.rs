@@ -199,11 +199,16 @@ where
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
         let len = u32::from_be_bytes(bytes[0..4].try_into()?);
 
+        ensure!(
+            len as usize <= (bytes.len() - 4),
+            "Invalid Peer Message received."
+        );
+
         let tag = PeerMessagesTag::try_from(bytes[4]).map_err(|e| anyhow!(e))?;
         ensure!(tag == T::message_tag());
 
         let payload = if bytes.len() > 5 {
-            T::from_bytes(&bytes[5..(5 + len) as usize])?
+            T::from_bytes(&bytes[5..(5 + len - 1) as usize])?
         } else {
             ensure!(
                 len == 1,

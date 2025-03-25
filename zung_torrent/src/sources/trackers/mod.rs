@@ -7,10 +7,12 @@ mod response;
 
 pub use request::*;
 pub use response::*;
+use tokio::io::AsyncReadExt;
 use tokio::sync::Semaphore;
 
 use super::peers::Peer;
 use crate::meta_info::InfoHashEncoded;
+use crate::sources::peers::{BitfieldPayload, PeerMessage};
 
 use anyhow::{bail, Result};
 
@@ -466,16 +468,12 @@ impl Announced {
     )]
     async fn handshake_unique_peer(peer: Peer, info_hash: InfoHashEncoded) -> Peer {
         match peer.handshake(info_hash).await {
-            Ok(_) => {
-                peer.set_connected();
-
+            Ok(peer) => {
                 tracing::info!("Connected to Peer");
-
                 peer
             }
             Err(e) => {
                 tracing::warn!("Unable to connect to Peer: {}", e.to_string());
-
                 peer
             }
         }
@@ -496,9 +494,23 @@ impl Handshaken {
     pub async fn download(self) {
         self.list
             .for_each_concurrent(None, async |peer| match peer {
-                Ok(p) => {
-                    if p.is_handshaken() {
-                        tracing::info!("Initiating Download")
+                Ok(mut peer) => {
+                    let addr = peer.get_addr();
+                    if let Some(stream) = peer.get_stream_mut() {
+                        tracing::info!(peer = %addr, "Initiating Download");
+
+                        let mut recv_bitfield = [0_u8; 409600];
+                        let read = stream.read(&mut recv_bitfield).await.unwrap();
+                        dbg!(read);
+                        if read == 0 {
+                            tracing::debug!("Empty Message sent");
+                        } else {
+                            match PeerMessage::<BitfieldPayload>::from_bytes(&recv_bitfield[..read])
+                            {
+                                Ok(m) => println!("REC: {m:?}"),
+                                Err(e) => tracing::warn!("{e}"),
+                            }
+                        }
                     }
                 }
                 Err(e) => tracing::error!("{e}"),

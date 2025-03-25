@@ -28,10 +28,6 @@ use tokio_util::time::FutureExt;
 use std::{
     hash::Hash,
     net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
 };
 
 use anyhow::{bail, ensure, Result};
@@ -45,12 +41,12 @@ use crate::{meta_info::InfoHashEncoded, TIMEOUT_DURATION};
 #[derive(Debug)]
 pub struct Peer {
     addr: SocketAddr,
-    handshaken: Arc<AtomicBool>,
+    stream: Option<TcpStream>,
 }
 
 impl Peer {
     #[tracing::instrument(skip_all)]
-    pub async fn handshake(&self, info_hash: InfoHashEncoded) -> Result<TcpStream> {
+    pub async fn handshake(&self, info_hash: InfoHashEncoded) -> Result<Self> {
         let mut stream = TcpStream::connect(self.addr)
             .timeout(TIMEOUT_DURATION)
             .await??;
@@ -85,7 +81,10 @@ impl Peer {
 
         info!("Handshake complete: {}", &self.addr);
 
-        Ok(stream)
+        Ok(Self {
+            addr: self.addr,
+            stream: Some(stream),
+        })
     }
 
     /// Returns the [`SocketAddr`] of the Peer.
@@ -93,14 +92,13 @@ impl Peer {
         self.addr
     }
 
-    /// Sets the peer state to `connected`.
-    pub fn set_connected(&self) {
-        self.handshaken.store(true, Ordering::Relaxed);
+    pub fn get_stream_mut(&mut self) -> Option<&mut TcpStream> {
+        self.stream.as_mut()
     }
 
     /// Check if the peer is connected or not.
     pub fn is_handshaken(&self) -> bool {
-        self.handshaken.load(Ordering::Relaxed)
+        self.stream.is_some()
     }
 
     /// Get ip addr octests
@@ -124,7 +122,7 @@ impl Clone for Peer {
     fn clone(&self) -> Self {
         Self {
             addr: self.addr,
-            handshaken: Arc::clone(&self.handshaken),
+            stream: None,
         }
     }
 }
@@ -171,8 +169,7 @@ impl From<SocketAddrV4> for Peer {
     fn from(value: SocketAddrV4) -> Self {
         Self {
             addr: SocketAddr::from(value),
-            handshaken: Arc::new(AtomicBool::new(false)),
-            // TODO: use TryFrom
+            stream: None,
         }
     }
 }
@@ -181,7 +178,7 @@ impl From<SocketAddrV6> for Peer {
     fn from(value: SocketAddrV6) -> Self {
         Self {
             addr: SocketAddr::from(value),
-            handshaken: Arc::new(AtomicBool::new(false)),
+            stream: None,
         }
     }
 }
