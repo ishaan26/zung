@@ -310,7 +310,7 @@ impl TrackersList {
 
     #[tracing::instrument(
         name = "Announce All::announce_to_tracker"
-        skip(info_hash)
+        skip_all
         fields(tracker=%tracker.url)
     )]
     async fn announce_to_tracker(
