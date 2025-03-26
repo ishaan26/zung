@@ -12,7 +12,7 @@ use zung_parsers::bencode;
 
 use crate::client::PEER_ID;
 use crate::meta_info::InfoHashEncoded;
-use crate::sources::trackers::{HttpTrackerResponse, TrackerResponseState, UdpTrackerResponse};
+use crate::trackers::{HttpTrackerResponse, TrackerResponseState, UdpTrackerResponse};
 use crate::{PeerID, TIMEOUT_DURATION};
 
 use super::TrackerResponse;

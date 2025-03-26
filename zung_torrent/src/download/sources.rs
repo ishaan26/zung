@@ -1,28 +1,19 @@
-//! For handling torrent data sources.
-//!
-//! This module provides the [`DownloadSources`] enum, which categorizes sources into tracker
-//! requests, HTTP seeders, or both (hybrid). It provides a unified interface for constructing
-//! sources from metadata, allowing a torrent client to efficiently pull data from either or both
-//! types of sources based on the information contained in the [`MetaInfo`] file.
-
-pub mod http_seeders;
-pub mod peers;
-pub mod trackers;
-
 use std::sync::atomic::AtomicUsize;
 
 use anyhow::Result;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
+use crate::http_seeders::{HttpSeeder, HttpSeedersList};
 use crate::meta_info::{InfoHashEncoded, MetaInfo};
-use http_seeders::{HttpSeeder, HttpSeedersList};
-use trackers::{Tracker, TrackersList};
+use crate::trackers::{Tracker, TrackersList};
+
+use super::tracker::TrackerDownloader;
+use super::Downloader;
 
 /// Representing different data sources (trackers and HTTP seeders) for a torrent.
 ///
 /// This enum is constructed when the [`Client`](crate::Client) is initialized. A reference to it
 /// can be drawn from the [`sources`](crate::Client::sources) method.
-
 #[derive(Debug)]
 pub struct DownloadSources {
     pub(crate) state: DownloadSourcesState,
@@ -168,15 +159,12 @@ impl DownloadSources {
     /// # }
     /// ```
     pub fn http_seeders(&self) -> Option<&HttpSeedersList> {
-        if let DownloadSourcesState::HttpSeeders { http_seeder_list } = &self.state {
-            Some(http_seeder_list)
-        } else if let DownloadSourcesState::Hybrid {
-            http_seeder_list, ..
-        } = &self.state
-        {
-            Some(http_seeder_list)
-        } else {
-            None
+        match &self.state {
+            DownloadSourcesState::HttpSeeders { http_seeder_list } => Some(http_seeder_list),
+            DownloadSourcesState::Hybrid {
+                http_seeder_list, ..
+            } => Some(http_seeder_list),
+            _ => None,
         }
     }
 
@@ -212,6 +200,13 @@ impl DownloadSources {
     #[must_use]
     pub fn is_hybrid(&self) -> bool {
         matches!(self.state, DownloadSourcesState::Hybrid { .. })
+    }
+
+    pub fn downloader(self) -> impl Downloader {
+        match self.state {
+            DownloadSourcesState::Trackers { tracker_list } => TrackerDownloader::new(tracker_list),
+            _ => todo!(),
+        }
     }
 
     pub async fn connect(&self, info_hash: InfoHashEncoded) -> Result<()> {

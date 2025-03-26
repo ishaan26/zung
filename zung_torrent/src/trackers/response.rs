@@ -4,7 +4,7 @@ use anyhow::Result;
 use bytes::{Buf, BytesMut};
 use serde::Deserialize;
 
-use crate::sources::peers::PeersList;
+use crate::peers::PeersList;
 
 use super::Action;
 

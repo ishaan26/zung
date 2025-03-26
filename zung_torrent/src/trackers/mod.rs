@@ -12,7 +12,7 @@ use tokio::sync::Semaphore;
 
 use super::peers::Peer;
 use crate::meta_info::InfoHashEncoded;
-use crate::sources::peers::{BitfieldPayload, PeerMessage};
+use crate::peers::{BitfieldPayload, PeerMessage};
 
 use anyhow::{bail, Result};
 

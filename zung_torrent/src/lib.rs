@@ -3,8 +3,11 @@
 
 #[cfg(feature = "client")]
 mod client;
+pub mod download;
+pub mod http_seeders;
 pub mod meta_info;
-pub mod sources;
+pub mod peers;
+pub mod trackers;
 
 pub use client::Client;
 pub use client::PeerID;

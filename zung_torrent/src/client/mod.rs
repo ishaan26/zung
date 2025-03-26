@@ -14,8 +14,10 @@ use std::{
 };
 
 use crate::{
+    download::sources::DownloadSources,
+    http_seeders::HttpSeedersList,
     meta_info::{FileTree, InfoHash, SortOrd},
-    sources::{http_seeders::HttpSeedersList, trackers::Tracker, DownloadSources},
+    trackers::Tracker,
     MetaInfo,
 };
 
@@ -387,13 +389,13 @@ impl Client {
         }
 
         match &self.sources().state {
-            crate::sources::DownloadSourcesState::Trackers { tracker_list } => {
+            crate::download::sources::DownloadSourcesState::Trackers { tracker_list } => {
                 print_trackers(tracker_list.as_slice());
             }
-            crate::sources::DownloadSourcesState::HttpSeeders { http_seeder_list } => {
+            crate::download::sources::DownloadSourcesState::HttpSeeders { http_seeder_list } => {
                 print_http_seeders(http_seeder_list);
             }
-            crate::sources::DownloadSourcesState::Hybrid {
+            crate::download::sources::DownloadSourcesState::Hybrid {
                 tracker_list,
                 http_seeder_list,
             } => {
