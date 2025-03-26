@@ -167,7 +167,7 @@ impl Display for PeerID {
                 std::str::from_utf8_unchecked(&self.uid),
                 std::str::from_utf8_unchecked(&self.end),
                 u32::from_be_bytes(self.pid),
-                std::str::from_utf8_unchecked(&self.custom[..11]),
+                std::str::from_utf8_unchecked(&self.custom[..10]),
             )
         }
     }

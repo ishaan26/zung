@@ -14,7 +14,7 @@ use std::{
 };
 
 use crate::{
-    download::sources::DownloadSources,
+    download::{sources::DownloadSources, Download, Downloader},
     http_seeders::HttpSeedersList,
     meta_info::{FileTree, InfoHash, SortOrd},
     trackers::Tracker,
@@ -31,7 +31,7 @@ pub struct Client {
     info_hash: InfoHash,
     peer_id: PeerID,
     num_files: OnceLock<usize>, // Cache no. of files.
-    sources: DownloadSources,
+    download: Download,
 }
 
 /// Main functions
@@ -92,16 +92,17 @@ impl Client {
             let meta_info = Arc::new(meta_info);
 
             let info_hash = info.join().expect("Unable to calculate infohash")?;
+            let info_hash_encoded = info_hash.as_encoded();
 
-            let sources = DownloadSources::new(&meta_info);
+            let sources = Arc::new(DownloadSources::new(&meta_info));
 
             Ok(Client {
-                meta_info,
+                meta_info: Arc::clone(&meta_info),
                 file_name,
                 info_hash,
                 peer_id: *PEER_ID,
                 num_files: OnceLock::new(),
-                sources,
+                download: Download::new(sources, info_hash_encoded, Arc::clone(&meta_info)),
             })
         } else {
             bail!("File not found")
@@ -222,7 +223,14 @@ impl Client {
     ///
     /// See the type documentation for more information on the usage.
     pub fn sources(&self) -> &DownloadSources {
-        &self.sources
+        self.download.sources()
+    }
+
+    pub async fn download(&self) {
+        self.download
+            .downloader()
+            .download_all(self.meta_info.size())
+            .await;
     }
 }
 
@@ -388,14 +396,14 @@ impl Client {
             }
         }
 
-        match &self.sources().state {
-            crate::download::sources::DownloadSourcesState::Trackers { tracker_list } => {
+        match &self.sources() {
+            crate::download::sources::DownloadSources::Trackers { tracker_list } => {
                 print_trackers(tracker_list.as_slice());
             }
-            crate::download::sources::DownloadSourcesState::HttpSeeders { http_seeder_list } => {
+            crate::download::sources::DownloadSources::HttpSeeders { http_seeder_list } => {
                 print_http_seeders(http_seeder_list);
             }
-            crate::download::sources::DownloadSourcesState::Hybrid {
+            crate::download::sources::DownloadSources::Hybrid {
                 tracker_list,
                 http_seeder_list,
             } => {

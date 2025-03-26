@@ -11,7 +11,6 @@ pub mod trackers;
 
 pub use client::Client;
 pub use client::PeerID;
-use colored::Colorize;
 use meta_info::MetaInfo;
 
 use clap::{Args, Subcommand};
@@ -80,17 +79,7 @@ impl TorrentArgs {
             TorrentCommands::Test { file } => {
                 let torrent = Client::new(file)?;
 
-                let info_hash = torrent.info_hash().as_encoded();
-
-                torrent.sources().connect(info_hash).await?;
-
-                if let Some(list) = torrent.sources().tracker_list() {
-                    for t in list {
-                        if t.is_connected() {
-                            println!("{} -> {}", t.url().cyan(), t.trys())
-                        }
-                    }
-                }
+                torrent.download().await;
             }
         }
 

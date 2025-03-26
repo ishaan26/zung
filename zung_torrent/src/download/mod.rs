@@ -5,13 +5,57 @@
 //! sources from metadata, allowing a torrent client to efficiently pull data from either or both
 //! types of sources based on the information contained in the [`MetaInfo`] file.
 
+use std::sync::Arc;
+
+use sources::DownloadSources;
+use tracker::TrackerDownloader;
+
+use crate::meta_info::{InfoHashEncoded, MetaInfo};
+
 pub mod sources;
 pub mod tracker;
 
+#[async_trait::async_trait]
 pub trait Downloader {
-    fn download_all(&self);
+    async fn download_all(self, left_pieces: usize);
 
     fn as_mut(&mut self) -> &mut Self {
         self
+    }
+}
+
+#[derive(Debug)]
+pub struct Download {
+    sources: Arc<DownloadSources>,
+    info_hash: InfoHashEncoded,
+    // TODO: Come back to the Arc
+    meta_info: Arc<MetaInfo>,
+}
+
+impl Download {
+    pub fn new(
+        sources: Arc<DownloadSources>,
+        info_hash: InfoHashEncoded,
+        meta_info: Arc<MetaInfo>,
+    ) -> Self {
+        Self {
+            sources,
+            info_hash,
+            meta_info,
+        }
+    }
+
+    pub fn downloader(&self) -> impl Downloader {
+        match self.sources() {
+            DownloadSources::Trackers { tracker_list } => {
+                TrackerDownloader::new(Arc::clone(tracker_list), self.info_hash)
+            }
+            // TODO: Rest of the source types
+            _ => todo!(),
+        }
+    }
+
+    pub fn sources(&self) -> &DownloadSources {
+        &self.sources
     }
 }
