@@ -20,6 +20,27 @@ use std::time::Duration;
 
 pub const TIMEOUT_DURATION: Duration = Duration::from_secs(5);
 
+const URL_ENCODE_TABLE: [[u8; 3]; 256] = {
+    let mut table = [[0; 3]; 256];
+    let mut i: u16 = 0;
+    while i <= 255 {
+        let high = if (i >> 4) < 10 {
+            b'0' + (i >> 4) as u8
+        } else {
+            b'A' + (i >> 4) as u8 - 10
+        };
+        let low = if (i & 0xF) < 10 {
+            b'0' + (i & 0xF) as u8
+        } else {
+            b'A' + (i & 0xF) as u8 - 10
+        };
+
+        table[i as usize] = [b'%', high, low];
+        i += 1;
+    }
+    table
+};
+
 /// Interact with torrent on the commandline. Install the [`zung`](https://crates.io/crates/zung)
 /// crate and run `zung torrent --help` to see what options are available
 #[derive(Debug, Args)]

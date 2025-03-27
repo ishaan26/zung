@@ -102,7 +102,7 @@ impl TrackerRequest {
             TrackerRequestState::Http { url, params } => {
                 let announce = url;
                 let info_hash = params.info_hash.to_url_encoded();
-                let peer_id = params.peer_id.to_string();
+                let peer_id = params.peer_id.to_url_encoded();
                 let params = serde_urlencoded::to_string(params)?;
 
                 Ok(format!(

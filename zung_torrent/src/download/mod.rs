@@ -29,7 +29,7 @@ pub struct Download {
     sources: Arc<DownloadSources>,
     info_hash: InfoHashEncoded,
     // TODO: Come back to the Arc
-    meta_info: Arc<MetaInfo>,
+    _meta_info: Arc<MetaInfo>,
 }
 
 impl Download {
@@ -41,7 +41,7 @@ impl Download {
         Self {
             sources,
             info_hash,
-            meta_info,
+            _meta_info: meta_info,
         }
     }
 

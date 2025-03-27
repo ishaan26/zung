@@ -7,6 +7,8 @@ use std::{
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 
+use crate::URL_ENCODE_TABLE;
+
 use super::{
     files::{FileAttr, FileNode, FileTree, Files},
     pieces::PiecesList,
@@ -158,12 +160,13 @@ impl InfoHash {
     #[inline]
     pub fn to_url_encoded(&self) -> String {
         let bytes = self.as_bytes();
-        let mut buff = String::with_capacity(60);
+        let mut buffer = Vec::with_capacity(3 * bytes.len());
         for byte in bytes {
-            buff.push('%');
-            buff.push_str(&hex::encode([byte]));
+            buffer.extend_from_slice(&URL_ENCODE_TABLE[byte as usize]);
         }
-        buff
+
+        // SAFETY: All bytes are ASCII characters in the ENCODE_TABLE
+        unsafe { String::from_utf8_unchecked(buffer) }
     }
 }
 
@@ -187,13 +190,14 @@ pub struct InfoHashEncoded([u8; 20]);
 
 impl InfoHashEncoded {
     pub fn to_url_encoded(&self) -> String {
-        let bytes = **self;
-        let mut buff = String::with_capacity(60);
+        let bytes = self.as_bytes();
+        let mut buffer = Vec::with_capacity(3 * bytes.len());
         for byte in bytes {
-            buff.push('%');
-            buff.push_str(&hex::encode([byte]));
+            buffer.extend_from_slice(&URL_ENCODE_TABLE[byte as usize]);
         }
-        buff
+
+        // SAFETY: All bytes are ASCII characters in the ENCODE_TABLE
+        unsafe { String::from_utf8_unchecked(buffer) }
     }
 
     pub const fn as_bytes(&self) -> [u8; 20] {
@@ -233,8 +237,7 @@ mod tests {
             name: "test_file.txt".to_string(),
         };
 
-        // We expect 4 pieces, each of size 1024 bytes
-        assert_eq!(info.torrent_size(), 3 * 1024);
+        assert_eq!(info.torrent_size(), 4096);
     }
 
     #[test]

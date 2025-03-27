@@ -323,7 +323,7 @@ mod tracker_tests {
                 assert!(params.compact);
                 assert!(!params.no_peer_id);
                 assert_eq!(params.event, Some(Event::Started));
-                assert_eq!(params.numwant, Some(0));
+                assert_eq!(params.numwant, Some(50));
             }
             TrackerRequestState::Udp { .. } => {
                 unreachable!("Why is http being read as upd?")
