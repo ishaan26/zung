@@ -14,9 +14,11 @@
 //! and the file becomes more available to stream.
 
 mod handshake;
+mod peer_message_frame;
 mod peer_messages;
 
 pub use handshake::*;
+pub use peer_message_frame::*;
 pub use peer_messages::*;
 
 use tokio::{
@@ -33,7 +35,6 @@ use std::{
 use anyhow::{bail, ensure, Result};
 use rayon::{iter::ParallelIterator, slice::ParallelSlice};
 use serde::{de::Visitor, Deserialize, Serialize, Serializer};
-use tracing::info;
 
 use crate::{meta_info::InfoHashEncoded, TIMEOUT_DURATION};
 
@@ -79,7 +80,7 @@ impl Peer {
         ensure!(recv_handshake.pstrlen() == Handshake::PROTOCOL_V1.len() as u8);
         ensure!(recv_handshake.info_hash() == handshake.info_hash());
 
-        info!("Handshake complete: {}", &self.addr);
+        tracing::info!("Handshake complete");
 
         Ok(Self {
             addr: self.addr,

@@ -69,7 +69,7 @@ enum TorrentCommands {
         with_sources: bool,
     },
 
-    Test {
+    Download {
         /// Torrent File to process
         #[arg(short, long, required = true)]
         file: PathBuf,
@@ -97,10 +97,10 @@ impl TorrentArgs {
                     torrent.print_download_sources();
                 }
             }
-            TorrentCommands::Test { file } => {
+            TorrentCommands::Download { file } => {
                 let torrent = Client::new(file)?;
 
-                torrent.download().await;
+                torrent.download_all().await;
             }
         }
 

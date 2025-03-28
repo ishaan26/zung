@@ -226,7 +226,7 @@ impl Client {
         self.download.sources()
     }
 
-    pub async fn download(&self) {
+    pub async fn download_all(&self) {
         self.download
             .downloader()
             .download_all(self.meta_info.size())

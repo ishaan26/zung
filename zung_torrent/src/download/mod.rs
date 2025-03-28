@@ -33,7 +33,7 @@ pub struct Download {
 }
 
 impl Download {
-    pub fn new(
+    pub(crate) fn new(
         sources: Arc<DownloadSources>,
         info_hash: InfoHashEncoded,
         meta_info: Arc<MetaInfo>,
@@ -51,7 +51,11 @@ impl Download {
                 TrackerDownloader::new(Arc::clone(tracker_list), self.info_hash)
             }
             // TODO: Rest of the source types
-            _ => todo!(),
+            DownloadSources::Hybrid { tracker_list, .. } => {
+                tracing::error!("Httpseeders downloader not yet implemented");
+                TrackerDownloader::new(Arc::clone(tracker_list), self.info_hash)
+            }
+            DownloadSources::HttpSeeders { .. } => todo!(),
         }
     }
 

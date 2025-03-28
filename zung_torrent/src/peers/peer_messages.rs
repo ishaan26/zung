@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use std::{fmt::Display, ops::Deref};
 
 use anyhow::{anyhow, ensure, Result};
 use bytes::{BufMut, Bytes, BytesMut};
@@ -18,6 +18,15 @@ pub struct PeerMessage<T> {
     len: u32,
     tag: PeerMessagesTag,
     payload: T,
+}
+
+impl<T> PeerMessage<T> {
+    pub(crate) const fn new(len: u32, tag: PeerMessagesTag, payload: T) -> PeerMessage<T>
+    where
+        T: PeerMessagePayload,
+    {
+        Self { len, tag, payload }
+    }
 }
 
 impl PeerMessage<()> {
@@ -185,24 +194,24 @@ where
     /// Constructs a `PeerMessage` from a byte array.
     ///
     /// This method deserializes a `PeerMessage` from its byte representation. It expects:
+    ///
     /// - The first 4 bytes to contain the message length in big-endian format.
     /// - The 5th byte to contain the message tag.
     /// - The remaining bytes to contain the payload, if any.
     ///
     /// # Returns
+    ///
     /// A `Result` containing the [`PeerMessage`] if deserialization succeeds, or an error if it fails.
     ///
     /// # Errors
+    ///
     /// - Returns an error if the `bytes` slice is too short.
     /// - Returns an error if the message tag does not match the expected tag for the payload type.
     /// - Returns an error if deserialization of the payload fails.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
         let len = u32::from_be_bytes(bytes[0..4].try_into()?);
 
-        ensure!(
-            len as usize <= (bytes.len() - 4),
-            "Invalid Peer Message received."
-        );
+        ensure!(len as usize <= (bytes.len() - 4));
 
         let tag = PeerMessagesTag::try_from(bytes[4]).map_err(|e| anyhow!(e))?;
         ensure!(tag == T::message_tag());
@@ -237,6 +246,76 @@ where
         self.len
     }
 }
+
+/// Extension trait for parsing peer messages from byte slices.
+///
+/// This trait provides methods to parse byte slices into `PeerMessage` structures,
+/// which represent messages exchanged between peers in a network. It is implemented
+/// for any type that can be referenced as a byte slice (`AsRef<[u8]>`), such as
+/// `Vec<u8>`, `&[u8]`, or `Bytes`. This makes it versatile for handling raw byte
+/// data, typically received from a network in peer-to-peer protocols.
+///
+/// # Examples
+///
+/// Assuming you have a byte slice containing a peer message:
+///
+/// ```rust
+/// use zung_torrent::peers::{PeerMessageExt, PeerMessage, BitfieldPayload};
+///
+/// let message: PeerMessage<BitfieldPayload> = bytes.parse_peer_message::<BitfieldPayload>();
+///
+/// match message {
+///     Ok(msg) => println!("Parsed message: {:?}", msg),
+///     Err(e) => eprintln!("Failed to parse: {}", e),
+/// }
+/// ```
+///
+/// Note that parsing may fail if the byte slice is malformed or does not match
+/// the expected format for the specified payload type.
+pub trait PeerMessageExt: AsRef<[u8]> {
+    /// Parses the byte slice into a `PeerMessage` with the specified payload type `T`.
+    ///
+    /// This method attempts to interpret the byte slice as a peer message with a payload
+    /// of type `T`, where `T` must implement `PeerMessagePayload`.
+    fn parse_peer_message<T>(&self) -> Result<PeerMessage<T>>
+    where
+        T: PeerMessagePayload,
+    {
+        PeerMessage::from_bytes(self.as_ref())
+    }
+
+    /// Parses the byte slice into a [`PeerMessage`] with a [`ChokePayload`].
+    fn parse_choke(&self) -> Result<PeerMessage<ChokePayload>> {
+        PeerMessage::from_bytes(self.as_ref())
+    }
+
+    /// Parses the byte slice into a [`PeerMessage`] with a [`UnchokePayload`].
+    fn parse_unchoke(&self) -> Result<PeerMessage<UnchokePayload>> {
+        PeerMessage::from_bytes(self.as_ref())
+    }
+
+    /// Parses the byte slice into a [`PeerMessage`] with a [`InterestedPayload`].
+    fn parse_interested(&self) -> Result<PeerMessage<InterestedPayload>> {
+        PeerMessage::from_bytes(self.as_ref())
+    }
+
+    /// Parses the byte slice into a [`PeerMessage`] with a [`NotInterestedPayload`].
+    fn parse_not_interested(&self) -> Result<PeerMessage<NotInterestedPayload>> {
+        PeerMessage::from_bytes(self.as_ref())
+    }
+
+    /// Parses the byte slice into a [`PeerMessage`] with a [`BitfieldPayload`].
+    fn parse_bitfield(&self) -> Result<PeerMessage<BitfieldPayload>> {
+        PeerMessage::from_bytes(self.as_ref())
+    }
+
+    /// Parses the byte slice into a [`PeerMessage`] with a [`PiecePayload`].
+    fn parse_piece(&self) -> Result<PeerMessage<PiecePayload>> {
+        PeerMessage::from_bytes(self.as_ref())
+    }
+}
+
+impl PeerMessageExt for &[u8] {}
 
 /////////////////////////////////////////////////////////////////////////////
 //                                  Tag
@@ -310,6 +389,21 @@ impl TryFrom<u8> for PeerMessagesTag {
             6 => Ok(Self::Request),
             7 => Ok(Self::Piece),
             tag => Err(anyhow!("Invalid PeerMessagesTag value: {tag}")),
+        }
+    }
+}
+
+impl Display for PeerMessagesTag {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PeerMessagesTag::Choke => f.write_str("choke"),
+            PeerMessagesTag::Unchoke => f.write_str("unchoke"),
+            PeerMessagesTag::Interested => f.write_str("interested"),
+            PeerMessagesTag::NotInterested => f.write_str("not interested"),
+            PeerMessagesTag::Have => f.write_str("have"),
+            PeerMessagesTag::Bitfield => f.write_str("bitfield"),
+            PeerMessagesTag::Request => f.write_str("request"),
+            PeerMessagesTag::Piece => f.write_str("piece"),
         }
     }
 }

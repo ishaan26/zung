@@ -1,19 +1,22 @@
-use std::sync::Arc;
+use std::{net::SocketAddr, sync::Arc};
 
+use bytes::BytesMut;
 use dashmap::DashSet;
 use futures::{stream::FuturesUnordered, StreamExt};
-use tokio::{io::AsyncReadExt, sync::Semaphore, task::JoinHandle};
+use tokio::{net::TcpStream, sync::Semaphore, task::JoinHandle};
+use tokio_util::time::FutureExt;
 
 use crate::{
     meta_info::InfoHashEncoded,
-    peers::{BitfieldPayload, Peer, PeerMessage},
+    peers::{BitfieldPayload, Peer, PeerMessage, PeerMessageFrame},
     trackers::{Tracker, TrackersList},
+    TIMEOUT_DURATION,
 };
 
 use super::Downloader;
 
-pub struct TrackerDownloader<T = UnAnnounced> {
-    state: T,
+pub struct TrackerDownloader<State = UnAnnounced> {
+    state: State,
     trackers: Arc<TrackersList>,
     info_hash: InfoHashEncoded,
 }
@@ -36,6 +39,7 @@ impl TrackerDownloader {
         let futures: FuturesUnordered<_> = self
             .trackers
             .iter()
+            .filter(|t| !t.is_connected())
             .cloned() // This performs an Arc clone on the interal type.
             .map(|tracker| -> JoinHandle<Tracker> {
                 // TODO: Think reannouncing.
@@ -129,6 +133,7 @@ impl TrackerDownloader<Announced> {
 
                             continue;
                         }
+
                         Some(list) if list.num_of_peers() == 0 => {
                             tracing::warn!(
                                 tracker_url = %announced_tracker.url(),
@@ -137,6 +142,7 @@ impl TrackerDownloader<Announced> {
 
                             continue;
                         }
+
                         Some(list) => {
                             for peer in list.iter() {
                                 // If the unique peer is inserted in the hashset, spawn a thread to
@@ -208,7 +214,7 @@ pub struct Handshaken {
 }
 
 impl TrackerDownloader<Handshaken> {
-    #[tracing::instrument(skip_all)]
+    #[tracing::instrument(name = "Download::download_all", skip_all)]
     pub async fn download_all(self) {
         self.state
             .list
@@ -217,24 +223,61 @@ impl TrackerDownloader<Handshaken> {
                     let addr = peer.get_addr();
                     if let Some(stream) = peer.get_stream_mut() {
                         tracing::info!(peer = %addr, "Initiating Download");
-
-                        let mut recv_bitfield = [0_u8; 409600];
-                        let read = stream.read(&mut recv_bitfield).await.unwrap();
-                        dbg!(read);
-                        if read == 0 {
-                            tracing::debug!("Empty Message sent");
-                        } else {
-                            match PeerMessage::<BitfieldPayload>::from_bytes(&recv_bitfield[..read])
-                            {
-                                Ok(m) => println!("REC: {m:?}"),
-                                Err(e) => tracing::warn!("{e}"),
+                        match Self::run_peer_messages(stream, addr).await {
+                            Ok(_) => {}
+                            Err(e) => {
+                                tracing::warn!(peer = %addr, " Unable to Download from peer: {e}")
                             }
-                        }
+                        };
                     }
                 }
                 Err(e) => tracing::error!("{e}"),
             })
             .await;
+    }
+
+    #[tracing::instrument(
+        name = "Download::peer_messages"
+        skip(stream)
+    )]
+    async fn run_peer_messages(
+        stream: &mut TcpStream,
+        peer_addr: SocketAddr,
+    ) -> anyhow::Result<()> {
+        let mut buf = BytesMut::with_capacity(40960);
+
+        tracing::debug!("Seeking bitfield message");
+
+        stream
+            .recv_peer_message::<BitfieldPayload>(&mut buf)
+            .timeout(TIMEOUT_DURATION)
+            .await??;
+
+        tracing::debug!("Bitfield message received");
+
+        drop(buf);
+
+        tracing::debug!("Sending unchoke message");
+
+        stream
+            .send_message(PeerMessage::interested())
+            .timeout(TIMEOUT_DURATION)
+            .await??;
+
+        tracing::info!("Unchoke Message sent");
+
+        tracing::debug!("Seeking unchoke message");
+
+        stream
+            .recv_unchoke_message()
+            .timeout(TIMEOUT_DURATION)
+            .await??;
+
+        tracing::debug!("Unchoke message received");
+
+        // TODO: Now comes the hard part... send request for each piece in the torrent file
+
+        Ok(())
     }
 }
 
@@ -246,5 +289,12 @@ impl Downloader for TrackerDownloader<UnAnnounced> {
             .await
             .download_all()
             .await
+    }
+}
+
+#[async_trait::async_trait]
+impl Downloader for TrackerDownloader<Announced> {
+    async fn download_all(self, _left_pieces: usize) {
+        self.handshake_all().await.download_all().await
     }
 }
