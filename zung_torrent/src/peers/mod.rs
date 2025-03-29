@@ -14,11 +14,9 @@
 //! and the file becomes more available to stream.
 
 mod handshake;
-mod peer_message_frame;
 mod peer_messages;
 
 pub use handshake::*;
-pub use peer_message_frame::*;
 pub use peer_messages::*;
 
 use tokio::{

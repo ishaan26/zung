@@ -226,6 +226,7 @@ impl Client {
         self.download.sources()
     }
 
+    /// Downloads the files from the torrent.
     pub async fn download_all(&self) {
         self.download
             .downloader()

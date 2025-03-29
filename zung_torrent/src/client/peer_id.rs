@@ -115,12 +115,13 @@ impl PeerID {
     /// Url-encodes the [`PeerID`] value for communication with a torrent Tracker;
     pub fn to_url_encoded(&self) -> String {
         let bytes = self.as_bytes();
+
         let mut buffer = Vec::with_capacity(3 * bytes.len());
         for byte in bytes {
             buffer.extend_from_slice(&URL_ENCODE_TABLE[byte as usize]);
         }
 
-        // SAFETY: All bytes are ASCII characters in the ENCODE_TABLE
+        // SAFETY: All bytes are ASCII characters in the URL_ENCODE_TABLE
         unsafe { String::from_utf8_unchecked(buffer) }
     }
 }

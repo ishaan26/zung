@@ -160,19 +160,6 @@ impl DownloadSources {
         matches!(self, DownloadSources::HttpSeeders { .. })
     }
 
-    /// Returns the hybrid_sources, if any, contained in the [`DownloadSources`].
-    pub fn hybrid(&self) -> Option<(&TrackersList, &HttpSeedersList)> {
-        if let DownloadSources::Hybrid {
-            tracker_list,
-            http_seeder_list,
-        } = &self
-        {
-            Some((tracker_list, http_seeder_list))
-        } else {
-            None
-        }
-    }
-
     /// Returns `true` if the download sources is [`Hybrid`].
     ///
     /// [`Hybrid`]: DownloadSources::Hybrid
