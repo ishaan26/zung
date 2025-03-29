@@ -6,7 +6,7 @@ use crate::http_seeders::{HttpSeeder, HttpSeedersList};
 use crate::meta_info::{InfoHashEncoded, MetaInfo};
 use crate::trackers::{Tracker, TrackersList};
 
-use super::tracker::TrackerDownloader;
+use super::tracker_downloader::TrackerDownloader;
 use super::Downloader;
 
 /// Representing different data sources (trackers and HTTP seeders) for a torrent.

@@ -216,30 +216,48 @@ pub struct Handshaken {
 impl TrackerDownloader<Handshaken> {
     #[tracing::instrument(name = "Download::download_all", skip_all)]
     pub async fn download_all(self) {
+        let mut handles = FuturesUnordered::new();
+
         self.state
             .list
             .for_each_concurrent(None, async |peer| match peer {
                 Ok(mut peer) => {
-                    let addr = peer.get_addr();
-                    if let Some(stream) = peer.get_stream_mut() {
-                        tracing::info!(peer = %addr, "Initiating Download");
-                        match Self::run_peer_messages(stream, addr).await {
-                            Ok(_) => {}
-                            Err(e) => {
-                                tracing::warn!(peer = %addr, " Unable to Download from peer: {e}")
-                            }
-                        };
-                    }
-                }
+                    let handle = tokio::spawn(async move {
+                        let addr = peer.get_addr();
+                        if let Some(stream) = peer.get_stream_mut() {
+                            tracing::info!(peer = %addr, "Initiating Download");
+                            match Self::run_peer_messages(stream, addr).await {
+                                Ok(_) => {
+                                    tracing::info!(peer = %peer.get_addr(), "Download completed successfully")
+                                }
+                                Err(e) => {
+                                    tracing::warn!(peer = %addr, " Unable to Download from peer: {e}")
+                                }
+                            };
+                        }
+                        peer
+                    });
+                    handles.push(handle);
+                },
                 Err(e) => tracing::error!("{e}"),
             })
             .await;
+
+        while let Some(future) = handles.next().await {
+            match future {
+                Ok(peer) => {
+                    tracing::info!(peer = %peer.get_addr(), "Download completed successfully")
+                }
+                Err(e) => tracing::error!("Task failed: {:?}", e),
+            }
+        }
     }
 
     #[tracing::instrument(
         name = "Download::peer_messages"
         skip(stream)
     )]
+    #[inline]
     async fn run_peer_messages(
         stream: &mut TcpStream,
         peer_addr: SocketAddr,
@@ -280,6 +298,10 @@ impl TrackerDownloader<Handshaken> {
         Ok(())
     }
 }
+
+/////////////////////////////////////////////////////////////////////////////
+//                              Impl Downloader
+/////////////////////////////////////////////////////////////////////////////
 
 #[async_trait::async_trait]
 impl Downloader for TrackerDownloader<UnAnnounced> {

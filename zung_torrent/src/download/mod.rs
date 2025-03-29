@@ -7,13 +7,13 @@
 
 use std::sync::Arc;
 
-use sources::DownloadSources;
-use tracker::TrackerDownloader;
+mod sources;
+mod tracker_downloader;
+
+pub use sources::DownloadSources;
+pub use tracker_downloader::TrackerDownloader;
 
 use crate::meta_info::{InfoHashEncoded, MetaInfo};
-
-pub mod sources;
-pub mod tracker;
 
 #[async_trait::async_trait]
 pub trait Downloader {
