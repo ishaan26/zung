@@ -96,13 +96,18 @@ impl Client {
 
             let sources = Arc::new(DownloadSources::new(&meta_info));
 
+            let left = meta_info.info().torrent_size();
+
+            // TODO: Update this after reading a partially downloaded torrent file.
+            let downloaded = 0;
+
             Ok(Client {
                 meta_info: Arc::clone(&meta_info),
                 file_name,
                 info_hash,
                 peer_id: *PEER_ID,
                 num_files: OnceLock::new(),
-                download: Download::new(sources, info_hash_encoded, Arc::clone(&meta_info)),
+                download: Download::new(sources, info_hash_encoded, left, downloaded),
             })
         } else {
             bail!("File not found")
@@ -228,10 +233,7 @@ impl Client {
 
     /// Downloads the files from the torrent.
     pub async fn download_all(&self) {
-        self.download
-            .downloader()
-            .download_all(self.meta_info.size())
-            .await;
+        self.download.downloader().download_all().await;
     }
 }
 

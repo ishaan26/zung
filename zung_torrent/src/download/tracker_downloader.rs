@@ -1,4 +1,7 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{
+    net::SocketAddr,
+    sync::{atomic::AtomicUsize, Arc},
+};
 
 use bytes::BytesMut;
 use dashmap::DashSet;
@@ -15,21 +18,43 @@ use crate::{
 
 use super::Downloader;
 
-pub struct TrackerDownloader<State = UnAnnounced> {
-    state: State,
+pub struct TrackerDownloader<T> {
+    state: T,
     trackers: Arc<TrackersList>,
     info_hash: InfoHashEncoded,
+    left: Arc<AtomicUsize>,
+    downloaded: Arc<AtomicUsize>,
 }
 
-impl TrackerDownloader {
+impl<T> TrackerDownloader<T> {
+    fn update_state<N>(self, state: N) -> TrackerDownloader<N> {
+        TrackerDownloader {
+            state,
+            trackers: self.trackers,
+            info_hash: self.info_hash,
+            left: self.left,
+            downloaded: self.downloaded,
+        }
+    }
+
+    pub fn left(&self) -> usize {
+        self.left.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl TrackerDownloader<UnAnnounced> {
     pub fn new(
         trackers: Arc<TrackersList>,
         info_hash: InfoHashEncoded,
+        left: Arc<AtomicUsize>,
+        downloaded: Arc<AtomicUsize>,
     ) -> TrackerDownloader<UnAnnounced> {
         TrackerDownloader {
             state: UnAnnounced,
             trackers,
             info_hash,
+            left,
+            downloaded,
         }
     }
 
@@ -50,11 +75,7 @@ impl TrackerDownloader {
             })
             .collect();
 
-        TrackerDownloader {
-            state: Announced { list: futures },
-            trackers: self.trackers,
-            info_hash: self.info_hash,
-        }
+        self.update_state(Announced { list: futures })
     }
 
     #[tracing::instrument(
@@ -178,11 +199,7 @@ impl TrackerDownloader<Announced> {
             }
         }
 
-        TrackerDownloader {
-            state: Handshaken { list: futures },
-            trackers: self.trackers,
-            info_hash: self.info_hash,
-        }
+        self.update_state(Handshaken { list: futures })
     }
 
     #[tracing::instrument(
@@ -228,10 +245,10 @@ impl TrackerDownloader<Handshaken> {
                             tracing::info!(peer = %addr, "Initiating Download");
                             match Self::run_peer_messages(stream, addr).await {
                                 Ok(_) => {
-                                    tracing::info!(peer = %peer.get_addr(), "Download completed successfully")
+                                    tracing::info!(peer = %peer.get_addr(), "Download initiated successfully")
                                 }
                                 Err(e) => {
-                                    tracing::warn!(peer = %addr, " Unable to Download from peer: {e}")
+                                    tracing::warn!(peer = %addr, "Unable to Download from peer: {e}")
                                 }
                             };
                         }
@@ -245,9 +262,7 @@ impl TrackerDownloader<Handshaken> {
 
         while let Some(future) = handles.next().await {
             match future {
-                Ok(peer) => {
-                    tracing::info!(peer = %peer.get_addr(), "Download completed successfully")
-                }
+                Ok(_) => {}
                 Err(e) => tracing::error!("Task failed: {:?}", e),
             }
         }
@@ -278,7 +293,7 @@ impl TrackerDownloader<Handshaken> {
         tracing::debug!("Sending unchoke message");
 
         stream
-            .send_message(PeerMessage::interested())
+            .send_peer_message(PeerMessage::interested())
             .timeout(TIMEOUT_DURATION)
             .await??;
 
@@ -305,18 +320,13 @@ impl TrackerDownloader<Handshaken> {
 
 #[async_trait::async_trait]
 impl Downloader for TrackerDownloader<UnAnnounced> {
-    async fn download_all(self, left_pieces: usize) {
-        self.announce_all(left_pieces)
+    async fn download_all(self) {
+        let left = self.left();
+
+        self.announce_all(left)
             .handshake_all()
             .await
             .download_all()
             .await
-    }
-}
-
-#[async_trait::async_trait]
-impl Downloader for TrackerDownloader<Announced> {
-    async fn download_all(self, _left_pieces: usize) {
-        self.handshake_all().await.download_all().await
     }
 }

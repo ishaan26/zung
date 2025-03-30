@@ -3,11 +3,8 @@ use std::sync::Arc;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::http_seeders::{HttpSeeder, HttpSeedersList};
-use crate::meta_info::{InfoHashEncoded, MetaInfo};
+use crate::meta_info::MetaInfo;
 use crate::trackers::{Tracker, TrackersList};
-
-use super::tracker_downloader::TrackerDownloader;
-use super::Downloader;
 
 /// Representing different data sources (trackers and HTTP seeders) for a torrent.
 ///
@@ -166,15 +163,5 @@ impl DownloadSources {
     #[must_use]
     pub fn is_hybrid(&self) -> bool {
         matches!(self, DownloadSources::Hybrid { .. })
-    }
-
-    pub fn downloader(self, info_hash: InfoHashEncoded) -> impl Downloader {
-        match self {
-            DownloadSources::Trackers { tracker_list } => {
-                TrackerDownloader::new(tracker_list, info_hash)
-            }
-            // TODO: Rest of the source types
-            _ => todo!(),
-        }
     }
 }

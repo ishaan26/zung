@@ -750,7 +750,7 @@ pub trait PeerMessageFrame: AsyncRead + AsyncWrite + Unpin {
         PeerMessage::from_bytes(&buf)
     }
 
-    async fn send_message<T>(&mut self, message: PeerMessage<T>) -> Result<()>
+    async fn send_peer_message<T>(&mut self, message: PeerMessage<T>) -> Result<()>
     where
         T: PeerMessagePayload + Send,
     {
