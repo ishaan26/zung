@@ -236,7 +236,14 @@ impl Client {
         let downloader = self.download.new_downloader();
         let tracker_downloader = downloader.tracker_download().await?;
 
-        println!("Left Pieces -> {}", tracker_downloader.left());
+        println!("Trackers      -> {}", self.sources().number_of_trackers());
+        println!("Announced     -> {}", tracker_downloader.announced_count());
+        println!(
+            "Peers         -> {}",
+            tracker_downloader.unique_peers_count()
+        );
+        println!("Handshaken    -> {}", tracker_downloader.handshaken_count());
+        println!("Downloaded    -> {}", tracker_downloader.downloaded_count());
 
         Ok(())
     }

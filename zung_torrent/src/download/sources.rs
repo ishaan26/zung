@@ -166,4 +166,12 @@ impl DownloadSources {
     pub fn is_hybrid(&self) -> bool {
         matches!(self, DownloadSources::Hybrid { .. })
     }
+
+    pub fn number_of_trackers(&self) -> usize {
+        match self {
+            DownloadSources::Trackers { tracker_list }
+            | DownloadSources::Hybrid { tracker_list, .. } => tracker_list.number_of_trackers(),
+            DownloadSources::HttpSeeders { .. } => 0,
+        }
+    }
 }

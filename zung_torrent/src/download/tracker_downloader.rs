@@ -1,6 +1,9 @@
 use std::{
     net::SocketAddr,
-    sync::{atomic::AtomicUsize, Arc},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
 };
 
 use bytes::BytesMut;
@@ -24,6 +27,7 @@ pub struct TrackerDownloader<T> {
     info_hash: InfoHashEncoded,
     left: Arc<AtomicUsize>,
     downloaded: Arc<AtomicUsize>,
+    counters: Counters,
 }
 
 impl<T> TrackerDownloader<T>
@@ -37,15 +41,61 @@ where
             info_hash: self.info_hash,
             left: self.left,
             downloaded: self.downloaded,
+            counters: self.counters,
         }
     }
 
     pub fn left(&self) -> usize {
-        self.left.load(std::sync::atomic::Ordering::SeqCst)
+        self.left.load(Ordering::SeqCst)
+    }
+
+    pub fn announced_count(&self) -> usize {
+        self.counters.announced.load(Ordering::SeqCst)
+    }
+
+    pub fn unique_peers_count(&self) -> usize {
+        self.counters.peers.load(Ordering::Relaxed)
+    }
+
+    pub fn handshaken_count(&self) -> usize {
+        self.counters.handshaken.load(Ordering::SeqCst)
+    }
+
+    pub fn downloaded_count(&self) -> usize {
+        self.counters.downloaded.load(Ordering::SeqCst)
     }
 }
 
 pub trait TrackerDownloaderState: DownloaderState {}
+
+struct Counters {
+    announced: Arc<AtomicUsize>,
+    handshaken: Arc<AtomicUsize>,
+    peers: Arc<AtomicUsize>,
+    downloaded: Arc<AtomicUsize>,
+}
+
+impl Counters {
+    fn new() -> Counters {
+        Counters {
+            announced: Arc::new(AtomicUsize::new(0)),
+            handshaken: Arc::new(AtomicUsize::new(0)),
+            peers: Arc::new(AtomicUsize::new(0)),
+            downloaded: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+}
+
+impl Clone for Counters {
+    fn clone(&self) -> Self {
+        Self {
+            announced: self.announced.clone(),
+            handshaken: self.handshaken.clone(),
+            peers: self.peers.clone(),
+            downloaded: self.downloaded.clone(),
+        }
+    }
+}
 
 /////////////////////////////////////////////////////////////////////////////
 //                                Uninitiated State
@@ -64,6 +114,7 @@ impl TrackerDownloader<Uninitiated> {
             info_hash,
             left,
             downloaded,
+            counters: Counters::new(),
         }
     }
 
@@ -74,6 +125,7 @@ impl TrackerDownloader<Uninitiated> {
             info_hash: self.info_hash,
             left: Arc::clone(&self.left),
             downloaded: Arc::clone(&self.downloaded),
+            counters: self.counters.clone(),
         }
     }
 }
@@ -94,10 +146,12 @@ impl TrackerDownloader<UnAnnounced> {
             .filter(|t| !t.is_connected())
             .cloned() // This performs an Arc clone on the interal type.
             .map(|tracker| -> JoinHandle<Tracker> {
+                let counter = Arc::clone(&self.counters.announced);
+
                 // TODO: Think reannouncing.
                 tokio::spawn(async move {
                     // Created a separate Functions because tracing doesnot work otherwise.
-                    Self::announce_to_tracker(tracker, self.info_hash, left).await
+                    Self::announce_to_tracker(tracker, self.info_hash, left, counter).await
                 })
             })
             .collect();
@@ -114,6 +168,7 @@ impl TrackerDownloader<UnAnnounced> {
         tracker: Tracker,
         info_hash: InfoHashEncoded,
         left_pieces: usize,
+        counter: Arc<AtomicUsize>,
     ) -> Tracker {
         tracing::debug!("Announcing to tracker");
 
@@ -122,6 +177,7 @@ impl TrackerDownloader<UnAnnounced> {
                 tracing::debug!( tracker = %tracker.url(), "Successfully Announced");
 
                 tracker.set_announced(true);
+                counter.fetch_add(1, Ordering::SeqCst);
                 tracker
             }
             Err(e) => {
@@ -215,11 +271,14 @@ impl TrackerDownloader<Announced> {
                                         "Initiating Handshake"
                                     );
 
+                                    let counter = Arc::clone(&self.counters.handshaken);
+
                                     let handle = tokio::spawn(async move {
                                         let _permit = semaphore.acquire().await.unwrap();
 
                                         // Created a separate Functions because tracing doesnot work otherwise.
-                                        Self::handshake_unique_peer(peer, self.info_hash).await
+                                        Self::handshake_unique_peer(peer, self.info_hash, counter)
+                                            .await
                                     });
 
                                     futures.push(handle);
@@ -231,6 +290,10 @@ impl TrackerDownloader<Announced> {
             }
         }
 
+        self.counters
+            .peers
+            .store(peers_buff.len(), Ordering::Relaxed);
+
         self.update_state(Handshaken { list: futures })
     }
 
@@ -239,10 +302,15 @@ impl TrackerDownloader<Announced> {
         skip(info_hash)
         fields(peer = %peer.get_addr())
     )]
-    async fn handshake_unique_peer(peer: Peer, info_hash: InfoHashEncoded) -> Peer {
+    async fn handshake_unique_peer(
+        peer: Peer,
+        info_hash: InfoHashEncoded,
+        counter: Arc<AtomicUsize>,
+    ) -> Peer {
         match peer.handshake(info_hash).await {
             Ok(peer) => {
                 tracing::info!("Connected to Peer");
+                counter.fetch_add(1, Ordering::SeqCst);
                 peer
             }
             Err(e) => {
@@ -270,17 +338,23 @@ impl TrackerDownloader<Handshaken> {
     pub async fn download_all(mut self) -> TrackerDownloader<TrackerDownload> {
         let mut handles = FuturesUnordered::new();
 
+        let counter = Arc::clone(&self.counters.downloaded);
+
         while let Some(handshake_result) = self.state.list.next().await {
             match handshake_result {
                 Ok(mut peer) => {
+                    let counter = Arc::clone(&counter);
+
                     let handle = tokio::spawn(async move {
                         let addr = peer.get_addr();
+
                         if let Some(stream) = peer.get_stream_mut() {
                             tracing::info!(peer = %addr, "Initiating Download");
 
                             match Self::run_peer_messages(stream, addr).await {
                                 Ok(_) => {
-                                    tracing::info!(peer = %peer.get_addr(), "Download initiated successfully")
+                                    tracing::info!(peer = %peer.get_addr(), "Download initiated successfully");
+                                    counter.fetch_add(1, Ordering::SeqCst);
                                 }
                                 Err(e) => {
                                     tracing::warn!(peer = %addr, "Unable to Download from peer: {e}")
