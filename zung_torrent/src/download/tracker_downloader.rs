@@ -40,16 +40,6 @@ where
         }
     }
 
-    pub fn initiate(&self) -> TrackerDownloader<UnAnnounced> {
-        TrackerDownloader {
-            state: UnAnnounced,
-            trackers: Arc::clone(&self.trackers),
-            info_hash: self.info_hash,
-            left: Arc::clone(&self.left),
-            downloaded: Arc::clone(&self.downloaded),
-        }
-    }
-
     pub fn left(&self) -> usize {
         self.left.load(std::sync::atomic::Ordering::SeqCst)
     }
@@ -74,6 +64,16 @@ impl TrackerDownloader<Uninitiated> {
             info_hash,
             left,
             downloaded,
+        }
+    }
+
+    pub fn initiate(&self) -> TrackerDownloader<UnAnnounced> {
+        TrackerDownloader {
+            state: UnAnnounced,
+            trackers: Arc::clone(&self.trackers),
+            info_hash: self.info_hash,
+            left: Arc::clone(&self.left),
+            downloaded: Arc::clone(&self.downloaded),
         }
     }
 }

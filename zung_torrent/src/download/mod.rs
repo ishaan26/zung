@@ -42,7 +42,7 @@ impl Download {
         }
     }
 
-    pub fn new_downloader(&self) -> Downloader<impl DownloaderState> {
+    pub fn new_downloader(&self) -> Downloader<Uninitiated> {
         match self.sources() {
             DownloadSources::Trackers { tracker_list } => {
                 Downloader::TrackerDownloader(TrackerDownloader::new(
@@ -91,10 +91,7 @@ where
     HttpSeederDownloader(HttpSeederDownloader<S>),
 }
 
-impl<S> Downloader<S>
-where
-    S: DownloaderState,
-{
+impl Downloader<Uninitiated> {
     pub async fn tracker_download(
         &self,
     ) -> anyhow::Result<TrackerDownloader<impl TrackerDownloaderState>> {
@@ -106,8 +103,9 @@ where
                 .await
                 .download_all()
                 .await),
+
             Downloader::HttpSeederDownloader(..) => {
-                Err(anyhow::anyhow!("Torrent only containes HTTP sources"))
+                Err(anyhow::anyhow!("Torrent doesnot contain any trackers"))
             }
         }
     }
