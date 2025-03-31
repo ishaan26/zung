@@ -268,11 +268,13 @@ where
 /// ```rust
 /// use zung_torrent::peers::{PeerMessageExt, PeerMessage, BitfieldPayload};
 ///
-/// let message: PeerMessage<BitfieldPayload> = bytes.parse_peer_message::<BitfieldPayload>();
+/// fn example(bytes: &[u8]) {
+///     let message = bytes.parse_peer_message::<BitfieldPayload>();
 ///
-/// match message {
-///     Ok(msg) => println!("Parsed message: {:?}", msg),
-///     Err(e) => eprintln!("Failed to parse: {}", e),
+///     match message {
+///         Ok(msg) => println!("Parsed message: {:?}", msg),
+///         Err(e) => eprintln!("Failed to parse: {}", e),
+///     }
 /// }
 /// ```
 ///
