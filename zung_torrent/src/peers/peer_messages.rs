@@ -711,15 +711,15 @@ pub trait PeerMessageFrame: AsyncRead + AsyncWrite + Unpin {
             }
 
             if buf.len() < 4 {
-                tracing::error!("Peer sent less than 4 bytes");
+                tracing::trace!("Peer sent less than 4 bytes. RETRYING");
                 continue;
             }
 
             let len = u32::from_be_bytes(buf[0..4].try_into()?);
 
             if len as usize > buf.len() {
-                tracing::error!(
-                    "Peer sent insuffecient data, expected: {len}, recv: {}",
+                tracing::trace!(
+                    "Peer sent insuffecient data, expected: {len}, recv: {}. RETRYING",
                     buf.len()
                 );
 
