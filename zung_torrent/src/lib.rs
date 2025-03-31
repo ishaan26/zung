@@ -100,7 +100,7 @@ impl TorrentArgs {
             TorrentCommands::Download { file } => {
                 let torrent = Client::new(file)?;
 
-                torrent.download_all().await;
+                torrent.download_from_trackers().await?;
             }
         }
 

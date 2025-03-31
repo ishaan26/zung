@@ -17,13 +17,15 @@ pub enum DownloadSources {
     Trackers { tracker_list: Arc<TrackersList> },
 
     /// Genarated if only `url_list` key is specified in the [`MetaInfo`] file.
-    HttpSeeders { http_seeder_list: HttpSeedersList },
+    HttpSeeders {
+        http_seeder_list: Arc<HttpSeedersList>,
+    },
 
     /// Genarated if both `announce` / `announce_list` and `url_list` keys are specified in the
     /// [`MetaInfo`] file.
     Hybrid {
         tracker_list: Arc<TrackersList>,
-        http_seeder_list: HttpSeedersList,
+        http_seeder_list: Arc<HttpSeedersList>,
     },
 }
 
@@ -70,11 +72,11 @@ impl DownloadSources {
                     }
                     DownloadSources::Hybrid {
                         tracker_list: Arc::new(TrackersList::new(tracker_list)),
-                        http_seeder_list,
+                        http_seeder_list: Arc::new(http_seeder_list),
                     }
                 } else {
                     DownloadSources::HttpSeeders {
-                        http_seeder_list: http_seeder_list(url_list),
+                        http_seeder_list: Arc::new(http_seeder_list(url_list)),
                     }
                 }
             }

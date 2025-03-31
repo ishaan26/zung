@@ -7,22 +7,16 @@
 
 use std::sync::{atomic::AtomicUsize, Arc};
 
+mod http_seeder_downloader;
 mod sources;
 mod tracker_downloader;
 
+pub use http_seeder_downloader::HttpSeederDownloader;
 pub use sources::DownloadSources;
 pub use tracker_downloader::TrackerDownloader;
+use tracker_downloader::TrackerDownloaderState;
 
 use crate::meta_info::InfoHashEncoded;
-
-#[async_trait::async_trait]
-pub trait Downloader {
-    async fn download_all(self);
-
-    fn as_mut(&mut self) -> &mut Self {
-        self
-    }
-}
 
 // TODO: Come back to the Arc
 #[derive(Debug)]
@@ -48,29 +42,73 @@ impl Download {
         }
     }
 
-    pub fn downloader(&self) -> impl Downloader {
+    pub fn new_downloader(&self) -> Downloader<impl DownloaderState> {
         match self.sources() {
-            DownloadSources::Trackers { tracker_list } => TrackerDownloader::new(
-                Arc::clone(tracker_list),
-                self.info_hash,
-                Arc::clone(&self.left),
-                Arc::clone(&self.downloaded),
-            ),
-            // TODO: Rest of the source types
-            DownloadSources::Hybrid { tracker_list, .. } => {
-                tracing::error!("Httpseeders downloader not yet implemented");
-                TrackerDownloader::new(
+            DownloadSources::Trackers { tracker_list } => {
+                Downloader::TrackerDownloader(TrackerDownloader::new(
                     Arc::clone(tracker_list),
                     self.info_hash,
                     Arc::clone(&self.left),
                     Arc::clone(&self.downloaded),
-                )
+                ))
             }
-            DownloadSources::HttpSeeders { .. } => todo!(),
+            // TODO: Rest of the source types
+            DownloadSources::Hybrid { tracker_list, .. } => {
+                tracing::error!("Httpseeders downloader not yet implemented");
+                Downloader::TrackerDownloader(TrackerDownloader::new(
+                    Arc::clone(tracker_list),
+                    self.info_hash,
+                    Arc::clone(&self.left),
+                    Arc::clone(&self.downloaded),
+                ))
+            }
+            DownloadSources::HttpSeeders { http_seeder_list } => {
+                tracing::error!("Httpseeders downloader not yet implemented");
+                Downloader::HttpSeederDownloader(HttpSeederDownloader {
+                    _state: Uninitiated,
+                    _list: Arc::clone(http_seeder_list),
+                })
+            }
         }
     }
 
     pub fn sources(&self) -> &DownloadSources {
         &self.sources
+    }
+}
+
+pub trait DownloaderState {}
+
+pub struct Uninitiated;
+
+impl DownloaderState for Uninitiated {}
+
+pub enum Downloader<S>
+where
+    S: DownloaderState,
+{
+    TrackerDownloader(TrackerDownloader<S>),
+    HttpSeederDownloader(HttpSeederDownloader<S>),
+}
+
+impl<S> Downloader<S>
+where
+    S: DownloaderState,
+{
+    pub async fn tracker_download(
+        &self,
+    ) -> anyhow::Result<TrackerDownloader<impl TrackerDownloaderState>> {
+        match self {
+            Downloader::TrackerDownloader(tracker_downloader) => Ok(tracker_downloader
+                .initiate()
+                .announce_all()
+                .handshake_all()
+                .await
+                .download_all()
+                .await),
+            Downloader::HttpSeederDownloader(..) => {
+                Err(anyhow::anyhow!("Torrent only containes HTTP sources"))
+            }
+        }
     }
 }

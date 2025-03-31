@@ -16,7 +16,7 @@ use crate::{
     TIMEOUT_DURATION,
 };
 
-use super::Downloader;
+use super::{DownloaderState, Uninitiated};
 
 pub struct TrackerDownloader<T> {
     state: T,
@@ -26,7 +26,10 @@ pub struct TrackerDownloader<T> {
     downloaded: Arc<AtomicUsize>,
 }
 
-impl<T> TrackerDownloader<T> {
+impl<T> TrackerDownloader<T>
+where
+    T: DownloaderState,
+{
     fn update_state<N>(self, state: N) -> TrackerDownloader<N> {
         TrackerDownloader {
             state,
@@ -37,30 +40,54 @@ impl<T> TrackerDownloader<T> {
         }
     }
 
+    pub fn initiate(&self) -> TrackerDownloader<UnAnnounced> {
+        TrackerDownloader {
+            state: UnAnnounced,
+            trackers: Arc::clone(&self.trackers),
+            info_hash: self.info_hash,
+            left: Arc::clone(&self.left),
+            downloaded: Arc::clone(&self.downloaded),
+        }
+    }
+
     pub fn left(&self) -> usize {
         self.left.load(std::sync::atomic::Ordering::SeqCst)
     }
 }
 
-impl TrackerDownloader<UnAnnounced> {
+pub trait TrackerDownloaderState: DownloaderState {}
+
+/////////////////////////////////////////////////////////////////////////////
+//                                Uninitiated State
+/////////////////////////////////////////////////////////////////////////////
+
+impl TrackerDownloader<Uninitiated> {
     pub fn new(
         trackers: Arc<TrackersList>,
         info_hash: InfoHashEncoded,
         left: Arc<AtomicUsize>,
         downloaded: Arc<AtomicUsize>,
-    ) -> TrackerDownloader<UnAnnounced> {
+    ) -> TrackerDownloader<Uninitiated> {
         TrackerDownloader {
-            state: UnAnnounced,
+            state: Uninitiated,
             trackers,
             info_hash,
             left,
             downloaded,
         }
     }
+}
 
+/////////////////////////////////////////////////////////////////////////////
+//                          UnAnnounced Trackers
+/////////////////////////////////////////////////////////////////////////////
+
+impl TrackerDownloader<UnAnnounced> {
     // TODO: Add counters
     #[tracing::instrument(name = "Announce All", skip(self))]
-    pub fn announce_all(self, left_pieces: usize) -> TrackerDownloader<Announced> {
+    pub fn announce_all(self) -> TrackerDownloader<Announced> {
+        let left = self.left();
+
         let futures: FuturesUnordered<_> = self
             .trackers
             .iter()
@@ -70,7 +97,7 @@ impl TrackerDownloader<UnAnnounced> {
                 // TODO: Think reannouncing.
                 tokio::spawn(async move {
                     // Created a separate Functions because tracing doesnot work otherwise.
-                    Self::announce_to_tracker(tracker, self.info_hash, left_pieces).await
+                    Self::announce_to_tracker(tracker, self.info_hash, left).await
                 })
             })
             .collect();
@@ -109,6 +136,9 @@ impl TrackerDownloader<UnAnnounced> {
 
 pub struct UnAnnounced;
 
+impl DownloaderState for UnAnnounced {}
+impl TrackerDownloaderState for UnAnnounced {}
+
 /////////////////////////////////////////////////////////////////////////////
 //                          Announced Trackers
 /////////////////////////////////////////////////////////////////////////////
@@ -117,6 +147,8 @@ pub struct UnAnnounced;
 pub struct Announced {
     list: FuturesUnordered<JoinHandle<Tracker>>,
 }
+
+impl DownloaderState for Announced {}
 
 impl TrackerDownloader<Announced> {
     #[tracing::instrument(name = "Handshake", skip_all)]
@@ -230,19 +262,22 @@ pub struct Handshaken {
     list: FuturesUnordered<JoinHandle<Peer>>,
 }
 
+impl DownloaderState for Handshaken {}
+impl TrackerDownloaderState for Handshaken {}
+
 impl TrackerDownloader<Handshaken> {
     #[tracing::instrument(name = "Download::download_all", skip_all)]
-    pub async fn download_all(self) {
+    pub async fn download_all(mut self) -> TrackerDownloader<TrackerDownload> {
         let mut handles = FuturesUnordered::new();
 
-        self.state
-            .list
-            .for_each_concurrent(None, async |peer| match peer {
+        while let Some(handshake_result) = self.state.list.next().await {
+            match handshake_result {
                 Ok(mut peer) => {
                     let handle = tokio::spawn(async move {
                         let addr = peer.get_addr();
                         if let Some(stream) = peer.get_stream_mut() {
                             tracing::info!(peer = %addr, "Initiating Download");
+
                             match Self::run_peer_messages(stream, addr).await {
                                 Ok(_) => {
                                     tracing::info!(peer = %peer.get_addr(), "Download initiated successfully")
@@ -255,17 +290,16 @@ impl TrackerDownloader<Handshaken> {
                         peer
                     });
                     handles.push(handle);
-                },
+                }
                 Err(e) => tracing::error!("{e}"),
-            })
-            .await;
-
-        while let Some(future) = handles.next().await {
-            match future {
-                Ok(_) => {}
-                Err(e) => tracing::error!("Task failed: {:?}", e),
             }
         }
+
+        while let Some(future) = handles.next().await {
+            if future.is_ok() {}
+        }
+
+        self.update_state(TrackerDownload)
     }
 
     #[tracing::instrument(
@@ -314,19 +348,7 @@ impl TrackerDownloader<Handshaken> {
     }
 }
 
-/////////////////////////////////////////////////////////////////////////////
-//                              Impl Downloader
-/////////////////////////////////////////////////////////////////////////////
+pub struct TrackerDownload;
 
-#[async_trait::async_trait]
-impl Downloader for TrackerDownloader<UnAnnounced> {
-    async fn download_all(self) {
-        let left = self.left();
-
-        self.announce_all(left)
-            .handshake_all()
-            .await
-            .download_all()
-            .await
-    }
-}
+impl DownloaderState for TrackerDownload {}
+impl TrackerDownloaderState for TrackerDownload {}

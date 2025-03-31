@@ -14,7 +14,7 @@ use std::{
 };
 
 use crate::{
-    download::{Download, DownloadSources, Downloader},
+    download::{Download, DownloadSources},
     http_seeders::HttpSeedersList,
     meta_info::{FileTree, InfoHash, SortOrd},
     trackers::Tracker,
@@ -232,8 +232,13 @@ impl Client {
     }
 
     /// Downloads the files from the torrent.
-    pub async fn download_all(&self) {
-        self.download.downloader().download_all().await;
+    pub async fn download_from_trackers(&self) -> anyhow::Result<()> {
+        let downloader = self.download.new_downloader();
+        let tracker_downloader = downloader.tracker_download().await?;
+
+        println!("Left Pieces -> {}", tracker_downloader.left());
+
+        Ok(())
     }
 }
 
