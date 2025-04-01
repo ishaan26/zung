@@ -269,6 +269,9 @@ impl PeersList {
     }
 }
 
+/// An iterator over the [`PeersList`] that returns a [`Peer`] on each iteration.
+///
+/// Accessed through the [`PeersList::iter`] method
 pub struct PeersIter<'a> {
     v4_iter: Option<std::slice::Iter<'a, Peer>>,
     v6_iter: Option<std::slice::Iter<'a, Peer>>,

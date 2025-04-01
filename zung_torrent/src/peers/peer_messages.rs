@@ -696,10 +696,56 @@ impl PiecePayload {
 //                                  Frame
 /////////////////////////////////////////////////////////////////////////////
 
-// TODO: Check is using async_trait is ok or not.
+/// A trait for sending (encoded) and receiving (devcoded) BitTorrent peer protocol messages over
+/// asynchronous streams.
+///
+/// This trait extends [`AsyncRead`], [`AsyncWrite`] and [`Unpin`] to provide specialized
+/// methods for peer message handling.
+///
+/// ## Example Usage
+///
+/// ```rust
+/// use tokio::net::TcpStream;
+/// use bytes::BytesMut;
+/// use zung_torrent::peers::{PeerMessage, PeerMessageFrame, BitfieldPayload};
+///
+/// # async fn handle_peer(stream: TcpStream) -> anyhow::Result<()> {
+/// let mut stream = stream;
+/// let mut buf = BytesMut::with_capacity(4096);
+///
+/// // Receive a BitField message
+/// let bitfield_msg = stream.recv_peer_message::<BitfieldPayload>(&mut buf).await?;
+///
+/// // Send an Interested message
+/// let interested_msg = PeerMessage::interested();
+/// stream.send_peer_message(interested_msg).await?;
+///
+/// // Receive an Unchoke message using specialized method. Since the size of the unchoke
+/// // message always remains the same, this method is more efficient than `recv_peer_message`
+/// let unchoke_msg = stream.recv_unchoke_message().await?;
+///
+/// # Ok(())
+/// # }
+/// ```
 pub trait PeerMessageFrame: AsyncRead + AsyncWrite + Unpin {
-    /// Reads some bytes from a type that implements [`AsyncRead`] into the buffer and outputs the
-    /// parsed [`PeerMessage`]
+    /// Reads and parses a peer message from the stream.
+    ///
+    /// This method reads bytes from the stream into the provided buffer until a complete peer
+    /// message is received.     
+    ///
+    /// # Returns
+    ///
+    /// A `Future` that resolves to a `Result<PeerMessage<T>>` where:
+    /// - `T` is the type of payload expected in the message
+    /// - The message is parsed according to the BitTorrent peer protocol specification
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The stream is closed unexpectedly
+    /// - The message length is invalid
+    /// - The message tag doesn't match the expected type
+    /// - The payload cannot be parsed
     fn recv_peer_message<T>(
         &mut self,
         buf: &mut BytesMut,
@@ -748,6 +794,20 @@ pub trait PeerMessageFrame: AsyncRead + AsyncWrite + Unpin {
         }
     }
 
+    /// Receives an `[unchoke](PeerMessage::unchoke)` message from the stream.
+    ///
+    /// This is a specialized method for receiving unchoke messages that is more efficient than
+    /// `recv_peer_message` since unchoke messages have a fixed size of 5 bytes (4 bytes length + 1 byte tag).
+    ///
+    /// # Returns
+    ///
+    /// A `Future` that resolves to a `Result<PeerMessage<UnchokePayload>>`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The stream is closed unexpectedly
+    /// - The message is not a valid unchoke message
     fn recv_unchoke_message(
         &mut self,
     ) -> impl Future<Output = Result<PeerMessage<UnchokePayload>>> {
@@ -760,6 +820,20 @@ pub trait PeerMessageFrame: AsyncRead + AsyncWrite + Unpin {
         }
     }
 
+    /// Sends a peer message over the stream.
+    ///
+    /// This method serializes the message according to the BitTorrent peer protocol and writes it
+    /// to the stream.
+    ///
+    /// # Returns
+    ///
+    /// A `Future` that resolves to a `Result<()>` indicating whether the message was sent successfully.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The stream is closed unexpectedly
+    /// - The message cannot be written completely
     fn send_peer_message<'a, T>(
         &'a mut self,
         message: PeerMessage<T>,
