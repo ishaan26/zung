@@ -44,6 +44,27 @@ pub struct Peer {
 }
 
 impl Peer {
+    /// Performs the BitTorrent handshake with the [`Peer`].
+    ///
+    /// This method establishes a TCP connection with the peer and exchanges handshake messages
+    /// according to the BitTorrent protocol. The handshake verifies that both parties are
+    /// interested in the same torrent by comparing `info hashes`.
+    ///
+    /// # Arguments
+    ///
+    /// * `info_hash` - The encoded info hash of the torrent to be shared
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Self>` - A new `Peer` instance with an established connection if successful
+    ///
+    /// # Errors
+    ///
+    /// This method will return an error if:
+    /// - The TCP connection cannot be established
+    /// - The handshake message cannot be sent or received
+    /// - The received handshake is invalid or doesn't match the expected format
+    /// - The peer doesn't respond within the timeout period
     #[tracing::instrument(skip_all)]
     pub async fn handshake(&self, info_hash: InfoHashEncoded) -> Result<Self> {
         let mut stream = TcpStream::connect(self.addr)
@@ -91,6 +112,7 @@ impl Peer {
         self.addr
     }
 
+    /// Get a mutable reference to the TCP stream if the [`handshake`](Self::handshake) was successful.
     pub fn get_stream_mut(&mut self) -> Option<&mut TcpStream> {
         self.stream.as_mut()
     }

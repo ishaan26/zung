@@ -637,16 +637,26 @@ impl PeerMessagePayload for RequestPayload {
 // TODO: See if there is a better more optimized way for handle piece payload.
 
 /// Payload of the [`PeerMessage::piece`] message.
+///
+/// In the BitTorrent protocol, a piece message contains the actual data being transferred.
+/// Each piece message includes:
+/// - An index identifying which piece this block belongs to
+/// - A begin offset indicating where in the piece this block starts
+/// - The actual block data
 #[derive(Debug, PartialEq, Eq)]
 pub struct PiecePayload {
     meta_data: PiecePayloadMetaData,
     all_bytes: Bytes,
 }
 
+/// Metadata portion of a piece message containing the piece index and byte offset.
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
 struct PiecePayloadMetaData {
+    /// The zero-based piece index (4 bytes in big-endian format)
     index: [u8; 4],
+
+    /// The zero-based byte offset within the piece (4 bytes in big-endian format)
     begin: [u8; 4],
 }
 
@@ -673,20 +683,33 @@ impl PeerMessagePayload for PiecePayload {
 }
 
 impl PiecePayload {
+    /// The size in bytes of the metadata portion (index + begin) of a piece message.
     pub const META_DATA_SIZE: usize = std::mem::size_of::<PiecePayloadMetaData>();
 
+    /// Returns the length of the `block` data in bytes.
+    ///
+    /// This excludes the metadata portion (index and begin) of the message.
     pub const fn block_len(&self) -> usize {
         self.all_bytes.len() - Self::META_DATA_SIZE
     }
 
+    /// Returns the `piece index` as a u32 value.
+    ///
+    /// The index identifies which piece of the torrent this block belongs to.
     pub const fn index(&self) -> u32 {
         u32::from_be_bytes(self.meta_data.index)
     }
 
+    /// Returns the `begin` offset as a u32 value.
+    ///
+    /// The begin offset indicates the starting position of this block within the piece.
     pub const fn begin(&self) -> u32 {
         u32::from_be_bytes(self.meta_data.begin)
     }
 
+    /// Returns the actual `block` data as a Bytes object.
+    ///
+    /// This excludes the metadata portion (index and begin) of the message.
     pub fn block(&self) -> Bytes {
         self.all_bytes.slice(Self::META_DATA_SIZE..)
     }
