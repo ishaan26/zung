@@ -1,4 +1,4 @@
-use std::{fmt::Display, ops::Deref};
+use std::{fmt::Display, future::Future, ops::Deref};
 
 use bytes::{BufMut, Bytes, BytesMut};
 
@@ -697,75 +697,87 @@ impl PiecePayload {
 /////////////////////////////////////////////////////////////////////////////
 
 // TODO: Check is using async_trait is ok or not.
-#[async_trait::async_trait]
 pub trait PeerMessageFrame: AsyncRead + AsyncWrite + Unpin {
     /// Reads some bytes from a type that implements [`AsyncRead`] into the buffer and outputs the
     /// parsed [`PeerMessage`]
-    async fn recv_peer_message<T>(&mut self, buf: &mut BytesMut) -> Result<PeerMessage<T>>
+    fn recv_peer_message<T>(
+        &mut self,
+        buf: &mut BytesMut,
+    ) -> impl Future<Output = Result<PeerMessage<T>>>
     where
         T: PeerMessagePayload,
     {
-        loop {
-            let read = self.read_buf(buf).await?;
+        async {
+            loop {
+                let read = self.read_buf(buf).await?;
 
-            if read == 0 {
-                continue;
+                if read == 0 {
+                    continue;
+                }
+
+                if buf.len() < 4 {
+                    tracing::trace!("Peer sent less than 4 bytes. RETRYING");
+                    continue;
+                }
+
+                let len = u32::from_be_bytes(buf[0..4].try_into()?);
+
+                if len as usize > buf.len() {
+                    tracing::trace!(
+                        "Peer sent insuffecient data, expected: {len}, recv: {}. RETRYING",
+                        buf.len()
+                    );
+
+                    continue;
+                }
+
+                ensure!(len as usize <= (buf.len() - 4));
+
+                let tag = PeerMessagesTag::try_from(buf[4]).map_err(|e| anyhow!(e))?;
+
+                ensure!(tag == T::message_tag());
+
+                let payload = T::from_bytes(&buf[5..(5 + len - 1) as usize])?;
+
+                buf.truncate(len as usize + 4);
+
+                let message: PeerMessage<T> = PeerMessage::new(len, tag, payload);
+
+                break Ok(message);
             }
-
-            if buf.len() < 4 {
-                tracing::trace!("Peer sent less than 4 bytes. RETRYING");
-                continue;
-            }
-
-            let len = u32::from_be_bytes(buf[0..4].try_into()?);
-
-            if len as usize > buf.len() {
-                tracing::trace!(
-                    "Peer sent insuffecient data, expected: {len}, recv: {}. RETRYING",
-                    buf.len()
-                );
-
-                continue;
-            }
-
-            ensure!(len as usize <= (buf.len() - 4));
-
-            let tag = PeerMessagesTag::try_from(buf[4]).map_err(|e| anyhow!(e))?;
-
-            ensure!(tag == T::message_tag());
-
-            let payload = T::from_bytes(&buf[5..(5 + len - 1) as usize])?;
-
-            buf.truncate(len as usize + 4);
-
-            let message: PeerMessage<T> = PeerMessage::new(len, tag, payload);
-
-            break Ok(message);
         }
     }
 
-    async fn recv_unchoke_message(&mut self) -> Result<PeerMessage<UnchokePayload>> {
-        let mut buf = [0; 5];
+    fn recv_unchoke_message(
+        &mut self,
+    ) -> impl Future<Output = Result<PeerMessage<UnchokePayload>>> {
+        async {
+            let mut buf = [0; 5];
 
-        self.read_exact(&mut buf).await?;
+            self.read_exact(&mut buf).await?;
 
-        PeerMessage::from_bytes(&buf)
+            PeerMessage::from_bytes(&buf)
+        }
     }
 
-    async fn send_peer_message<T>(&mut self, message: PeerMessage<T>) -> Result<()>
+    fn send_peer_message<'a, T>(
+        &'a mut self,
+        message: PeerMessage<T>,
+    ) -> impl Future<Output = Result<()>>
     where
-        T: PeerMessagePayload + Send,
+        T: 'a + PeerMessagePayload + Send,
     {
-        let written = self.write(&message.to_bytes()).await?;
-        self.flush().await?;
+        async move {
+            let written = self.write(&message.to_bytes()).await?;
+            self.flush().await?;
 
-        ensure!(message.size() == written);
+            ensure!(message.size() == written);
 
-        Ok(())
+            Ok(())
+        }
     }
 }
 
-#[async_trait::async_trait]
 impl PeerMessageFrame for TcpStream {}
 
 /////////////////////////////////////////////////////////////////////////////
