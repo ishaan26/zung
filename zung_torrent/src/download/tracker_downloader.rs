@@ -318,7 +318,7 @@ impl TrackerDownloader<Announced> {
 
     #[tracing::instrument(
         name = "Handshake::handshake_unique_peer"
-        skip(info_hash)
+        skip_all
         fields(peer = %peer.get_addr())
     )]
     async fn handshake_unique_peer(
