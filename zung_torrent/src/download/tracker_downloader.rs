@@ -21,6 +21,14 @@ use crate::{
 
 use super::{DownloaderState, Uninitiated};
 
+/// A state machine that manages the process of downloading from trackers in a BitTorrent client.
+///
+/// This struct transitions through different states during the download process:
+/// - `Uninitiated`: Initial state before any tracker communication
+/// - `UnAnnounced`: Ready to announce to trackers
+/// - `Announced`: Successfully announced to trackers
+/// - `Handshaken`: Successfully handshaken with peers
+/// - `TrackerDownload`: Actively downloading from peers
 pub struct TrackerDownloader<T> {
     state: T,
     trackers: Arc<TrackersList>,
@@ -34,6 +42,7 @@ impl<T> TrackerDownloader<T>
 where
     T: DownloaderState,
 {
+    /// Updates the state of the tracker downloader, transitioning to a new state.
     fn update_state<N>(self, state: N) -> TrackerDownloader<N> {
         TrackerDownloader {
             state,
@@ -45,27 +54,37 @@ where
         }
     }
 
+    /// Returns the number of bytes left to download.
     pub fn left(&self) -> usize {
-        self.left.load(Ordering::SeqCst)
+        self.left.load(Ordering::Relaxed)
     }
 
+    /// Returns the number of trackers that have been successfully announced to.
     pub fn announced_count(&self) -> usize {
-        self.counters.announced.load(Ordering::SeqCst)
+        self.counters.announced.load(Ordering::Relaxed)
     }
 
+    /// Returns the number of unique peers discovered from trackers.
     pub fn unique_peers_count(&self) -> usize {
         self.counters.peers.load(Ordering::Relaxed)
     }
 
+    /// Returns the number of peers that have been successfully handshaken with.
     pub fn handshaken_count(&self) -> usize {
-        self.counters.handshaken.load(Ordering::SeqCst)
+        self.counters.handshaken.load(Ordering::Relaxed)
     }
 
+    /// Returns the number of peers that are actively being downloaded from.
     pub fn downloaded_count(&self) -> usize {
-        self.counters.downloaded.load(Ordering::SeqCst)
+        self.counters.downloaded.load(Ordering::Relaxed)
     }
 }
 
+/// Trait that represents a state in the tracker downloader state machine.
+///
+/// This trait is implemented by all states in the [`TrackerDownloader`] state machine and serves
+/// as a marker trait that extends the base `DownloaderState` trait. It helps to distinguish states
+/// that are specific to the tracker downloading process.
 pub trait TrackerDownloaderState: DownloaderState {}
 
 struct Counters {
@@ -335,7 +354,7 @@ impl TrackerDownloaderState for Handshaken {}
 
 impl TrackerDownloader<Handshaken> {
     #[tracing::instrument(name = "Download::download_all", skip_all)]
-    pub async fn download_all(mut self) -> TrackerDownloader<TrackerDownload> {
+    pub async fn download_all(mut self) -> TrackerDownloader<Downloading> {
         let mut handles = FuturesUnordered::new();
 
         let counter = Arc::clone(&self.counters.downloaded);
@@ -373,7 +392,7 @@ impl TrackerDownloader<Handshaken> {
             if future.is_ok() {}
         }
 
-        self.update_state(TrackerDownload)
+        self.update_state(Downloading)
     }
 
     #[tracing::instrument(
@@ -422,7 +441,7 @@ impl TrackerDownloader<Handshaken> {
     }
 }
 
-pub struct TrackerDownload;
+pub struct Downloading;
 
-impl DownloaderState for TrackerDownload {}
-impl TrackerDownloaderState for TrackerDownload {}
+impl DownloaderState for Downloading {}
+impl TrackerDownloaderState for Downloading {}

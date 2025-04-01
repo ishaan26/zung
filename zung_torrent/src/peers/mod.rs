@@ -250,14 +250,30 @@ impl PeersList {
         }
     }
 
+    /// Returns `true` if this `PeersList` contains IPv4 peers.
+    ///
+    /// This method can be used to check if the tracker response included any IPv4 peers
+    /// before attempting to iterate over them.
     pub const fn contains_peers_v4(&self) -> bool {
         self.peers.is_some()
     }
 
+    /// Returns `true` if this `PeersList` contains IPv6 peers.
+    ///
+    /// This method can be used to check if the tracker response included any IPv6 peers
+    /// before attempting to iterate over them.
     pub const fn contains_peers_v6(&self) -> bool {
         self.peers6.is_some()
     }
 
+    /// Converts the peer list into a vector of [`Peer`] instances.
+    ///
+    /// This method combines both IPv4 and IPv6 peers into a single vector.
+    /// If either type of peers is not present, an empty slice is used instead.
+    ///
+    /// # Returns
+    ///
+    /// A `Vec<Peer>` containing all peers from both IPv4 and IPv6 lists.
     pub fn to_vec(&self) -> Vec<Peer> {
         static EMPTY: Vec<Peer> = Vec::new();
 
@@ -279,6 +295,13 @@ impl PeersList {
         combined
     }
 
+    /// Returns the total number of peers in the list, combining both IPv4 and IPv6 peers.
+    ///
+    /// This method counts all peers from both the IPv4 and IPv6 lists, even if one of them is empty.
+    ///
+    /// # Returns
+    ///
+    /// The total count of peers across both IPv4 and IPv6 lists.
     pub fn num_of_peers(&self) -> usize {
         let v4_len = self.peers.as_ref().map(|p| p.0.len()).unwrap_or(0);
         let v6_len = self.peers6.as_ref().map(|p| p.0.len()).unwrap_or(0);
@@ -286,6 +309,15 @@ impl PeersList {
         v4_len + v6_len
     }
 
+    /// Returns an iterator over all peers in the list.
+    ///
+    /// The iterator will first yield all IPv4 peers, followed by all IPv6 peers.
+    /// If either type of peers is not present, the iterator will seamlessly move
+    /// to the next available type.
+    ///
+    /// # Returns
+    ///
+    /// A [`PeersIter`] that iterates over references to all peers in the list.
     pub fn iter(&self) -> PeersIter<'_> {
         PeersIter::new(self)
     }
