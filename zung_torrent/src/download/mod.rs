@@ -2,7 +2,9 @@
 //!
 //! It provides a unified interface for constructing sources from metadata, allowing a torrent client
 //! to efficiently pull data from either or both types of sources based on the information contained
-//! in the [`MetaInfo`](crate::meta_info::MetaInfo) file.
+//! in the [`MetaInfo`] file.
+//!
+//! [`MetaInfo`]: crate::meta_info::MetaInfo
 
 use std::sync::{atomic::AtomicUsize, Arc};
 

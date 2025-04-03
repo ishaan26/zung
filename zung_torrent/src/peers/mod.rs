@@ -1,17 +1,67 @@
-//! Provides functionality for managing and iterating over IPv4 and IPv6 peers.
+//! For managing and iterating over IPv4 and IPv6 peers in BitTorrent networks.
 //!
-//! Peers refer to the number of users that have the file and are seeding (sharing). If the torrent
-//! file has a healthy number of peers, it should result in faster and more reliable file transfer
-//! and a quality streaming experience. If your torrent file has zero or few peers (i.e., few
-//! people are sharing the file), you may experience buffering, or may not be able to view the file
-//! at all.
+//! # Overview
 //!
-//! To monitor the number of peers after you have started a torrent stream, look to the bottom of
-//! the player window and count the number of active peers (seeders). If you run into problems with
-//! the quality of the stream, or the media cannot play at all, it may be due to a low number of
-//! peers, or no peers at all. If this is the case, try to find a different torrent file or keep
-//! the existing torrent file and try again later. You might find that more seeders come online,
-//! and the file becomes more available to stream.
+//! In BitTorrent terminology, peers are other users who have the file you're trying to download.
+//! There are two types of peers:
+//!
+//! - **Seeders**: Users who have the complete file and are sharing it
+//! - **Leechers**: Users who have only parts of the file and are still downloading
+//!
+//! A healthy torrent has a good number of seeders, which ensures faster downloads and reliable
+//! streaming. This module provides the infrastructure to connect to, communicate with, and
+//! manage these peers across both IPv4 and IPv6 networks.
+//!
+//! # Module Contents
+//!
+//! This module provides:
+//! - Peer connection and handshake implementation
+//! - Peer Message Protocol message handling
+//! - Efficient peer list management for both IPv4 and IPv6
+//! - Iterators for working with peer collections
+//!
+//! ## NOTE:
+//!
+//! This module is the lower level implementation to handle peer connections based on the
+//! BitTorrent Protocol. If you intend to just download a torrent file, please see
+//! [`crate::download`] module.
+//!
+//! # Usage:
+//!
+//! A list of [`Peer`], i.e., the [`PeersList`] can be obtained through a
+//! [`TrackerResponse`](crate::trackers::TrackerResponse) which is obtained by
+//! [announceing](crate::trackers::Tracker::announce) to a [`Tracker`](crate::trackers::Tracker).
+//!
+//! ## Handshake with a peer
+//!
+//! Once a peer is obtained, the next step in the bittorrent protocol is to perform a
+//! [`handshake`](Peer::handshake) with each peer.
+//!
+//! ```ignore
+//! # use zung_torrent::*;
+//! let connected_peer = peer.handshake(info_hash).await?;
+//! ```
+//!
+//! The above method returns a new [`Peer`] type which would contain a [`TcpStream`] if the
+//! handshake was successful.
+//!
+//! Once the handshake is successful, next step is the back and forth of the [`PeerMessage`]s over
+//! the handshake [`TcpStream`].
+//!
+//! ## Sending and receiving peer messages
+//!
+//! ```ignore
+//! # use zung_torrent::*;
+//! // if stream is `Some`, that means handshake was successful.
+//!
+//! if let Some(stream) = peer.get_stream_mut() {
+//!     stream.recv_peer_message::<BitfieldPayload>();
+//!     stream.send_peer_message(PeerMessage::interested());
+//! }
+//! ```
+//!
+//! Please refer the documentation of [`PeerMessage`], [`PeerMessageExt`] and [`PeerMessageFrame`]
+//! for more information on the usage of peer messages.
 
 mod handshake;
 mod peer_messages;
@@ -224,9 +274,9 @@ impl From<SocketAddrV6> for Peer {
 /// iterating. Both borrowed and owned iteration use efficient standard library iterators
 /// internally.
 ///
-/// [`TrackerResponse`]: crate::sources::trackers::TrackerResponse
-/// [`Tracker`]: crate::sources::trackers::Tracker
-/// [`announce`]: crate::sources::trackers::Tracker::announce
+/// [`TrackerResponse`]: crate::trackers::TrackerResponse
+/// [`Tracker`]: crate::trackers::Tracker
+/// [`announce`]: crate::trackers::Tracker::announce
 #[derive(Debug, Deserialize)]
 pub struct PeersList {
     peers: Option<PeersV4>,
