@@ -103,12 +103,6 @@ impl DownloadSources {
     /// }
     /// # }
     /// ```
-    ///
-    /// # NOTE
-    ///
-    /// Please note that if this method is used before performing the
-    /// [`announce_all`](DownloadSources::announce_all) method, this will return the [`Tracker`] in its
-    /// uninitialized state, meaning that each Tracker will have to be announced mannually.
     pub fn tracker_list(&self) -> Option<&TrackersList> {
         match self {
             DownloadSources::Trackers { tracker_list }

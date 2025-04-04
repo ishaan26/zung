@@ -722,7 +722,7 @@ impl PiecePayload {
 /// A trait for sending (encoded) and receiving (devcoded) BitTorrent peer protocol messages over
 /// asynchronous streams.
 ///
-/// This trait extends [`AsyncRead`], [`AsyncWrite`] and [`Unpin`] to provide specialized
+/// This trait extends [`AsyncRead`], [`AsyncWrite`] to provide specialized
 /// methods for peer message handling.
 ///
 /// ## Example Usage
@@ -817,14 +817,10 @@ pub trait PeerMessageFrame: AsyncRead + AsyncWrite + Unpin {
         }
     }
 
-    /// Receives an `[unchoke](PeerMessage::unchoke)` message from the stream.
+    /// Receives an [`unchoke`](PeerMessage::unchoke) message from the stream.
     ///
     /// This is a specialized method for receiving unchoke messages that is more efficient than
     /// `recv_peer_message` since unchoke messages have a fixed size of 5 bytes (4 bytes length + 1 byte tag).
-    ///
-    /// # Returns
-    ///
-    /// A `Future` that resolves to a `Result<PeerMessage<UnchokePayload>>`.
     ///
     /// # Errors
     ///
