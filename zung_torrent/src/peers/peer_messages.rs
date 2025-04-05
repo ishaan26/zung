@@ -26,15 +26,6 @@ pub struct PeerMessage<T> {
     payload: T,
 }
 
-impl<T> PeerMessage<T> {
-    pub(crate) const fn new(len: u32, tag: PeerMessagesTag, payload: T) -> PeerMessage<T>
-    where
-        T: PeerMessagePayload,
-    {
-        Self { len, tag, payload }
-    }
-}
-
 impl PeerMessage<()> {
     /// Creates a `PeerMessage` representing the `choke` message.
     ///
@@ -129,6 +120,12 @@ impl PeerMessage<()> {
     /// Creates a `PeerMessage` representing the `request` message.
     ///
     /// A request message is used to request a block.
+    ///
+    /// # Parameters
+    ///
+    /// - `index`: Integer specifying the zero-based piece index
+    /// - `begin`: Integer specifying the zero-based byte offset within the piece
+    /// - `length`: Integer specifying the requested length in bytes
     pub const fn request(index: u32, begin: u32, length: u32) -> PeerMessage<RequestPayload> {
         PeerMessage {
             len: (size_of::<RequestPayload>() + 1) as u32,
@@ -174,6 +171,13 @@ impl<T> PeerMessage<T>
 where
     T: PeerMessagePayload,
 {
+    pub(crate) const fn new(len: u32, tag: PeerMessagesTag, payload: T) -> PeerMessage<T>
+    where
+        T: PeerMessagePayload,
+    {
+        Self { len, tag, payload }
+    }
+
     /// Calculates the size of the message in bytes.
     ///
     /// The size is determined by:

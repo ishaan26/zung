@@ -14,12 +14,14 @@ use tokio_util::time::FutureExt;
 
 use crate::{
     meta_info::InfoHashEncoded,
-    peers::{BitfieldPayload, Peer, PeerMessage, PeerMessageFrame},
+    peers::{BitfieldPayload, Peer, PeerMessage, PeerMessageFrame, PiecePayload},
     trackers::{Tracker, TrackersList},
     TIMEOUT_DURATION,
 };
 
 use super::{DownloaderState, Uninitiated};
+
+pub const BLOCK_MAX: u32 = 1 << 14; /* 16 Kbi*/
 
 /// A state machine that manages the process of downloading from trackers in a BitTorrent client.
 ///
@@ -154,7 +156,6 @@ impl TrackerDownloader<Uninitiated> {
 /////////////////////////////////////////////////////////////////////////////
 
 impl TrackerDownloader<UnAnnounced> {
-    // TODO: Add counters
     #[tracing::instrument(name = "Announce All", skip(self))]
     pub fn announce_all(self) -> TrackerDownloader<Announced> {
         let left = self.left();
@@ -209,6 +210,11 @@ impl TrackerDownloader<UnAnnounced> {
     }
 }
 
+/// Represents the state where the tracker downloader is ready to announce to trackers.
+///
+/// This is the state after initialization but before any announcements have been made to trackers.
+/// From this state, the downloader can transition to the `Announced` state by calling
+/// [`TrackerDownloader::announce_all()`].
 pub struct UnAnnounced;
 
 impl DownloaderState for UnAnnounced {}
@@ -356,8 +362,8 @@ impl TrackerDownloader<Handshaken> {
     #[tracing::instrument(name = "Download::download_all", skip_all)]
     pub async fn download_all(mut self) -> TrackerDownloader<Downloading> {
         let mut handles = FuturesUnordered::new();
-
         let counter = Arc::clone(&self.counters.downloaded);
+        let left = self.left();
 
         while let Some(handshake_result) = self.state.list.next().await {
             match handshake_result {
@@ -370,7 +376,7 @@ impl TrackerDownloader<Handshaken> {
                         if let Some(stream) = peer.get_stream_mut() {
                             tracing::info!(peer = %addr, "Initiating Download");
 
-                            match Self::run_peer_messages(stream, addr).await {
+                            match Self::run_peer_messages(stream, addr, left).await {
                                 Ok(_) => {
                                     tracing::info!(peer = %peer.get_addr(), "Download initiated successfully");
                                     counter.fetch_add(1, Ordering::SeqCst);
@@ -403,8 +409,9 @@ impl TrackerDownloader<Handshaken> {
     async fn run_peer_messages(
         stream: &mut TcpStream,
         peer_addr: SocketAddr,
+        left: usize,
     ) -> anyhow::Result<()> {
-        let mut buf = BytesMut::with_capacity(40960);
+        let mut buf = BytesMut::with_capacity(16 * 1024);
 
         tracing::debug!("Seeking bitfield message");
 
@@ -415,7 +422,7 @@ impl TrackerDownloader<Handshaken> {
 
         tracing::debug!("Bitfield message received");
 
-        drop(buf);
+        buf.clear();
 
         tracing::debug!("Sending unchoke message");
 
@@ -436,6 +443,26 @@ impl TrackerDownloader<Handshaken> {
         tracing::debug!("Unchoke message received");
 
         // TODO: Now comes the hard part... send request for each piece in the torrent file
+
+        tracing::debug!("Sending request message");
+
+        stream
+            .send_peer_message(PeerMessage::request(0, 0, BLOCK_MAX))
+            .timeout(TIMEOUT_DURATION)
+            .await??;
+
+        tracing::debug!("Request Message Sent");
+
+        tracing::debug!("Seeking piece message");
+
+        let piece = stream
+            .recv_peer_message::<PiecePayload>(&mut buf)
+            .timeout(TIMEOUT_DURATION)
+            .await??;
+
+        dbg!(piece.payload().block());
+
+        tracing::debug!("Piece message received");
 
         Ok(())
     }
