@@ -45,7 +45,10 @@ where
     T: DownloaderState,
 {
     /// Updates the state of the tracker downloader, transitioning to a new state.
-    fn update_state<N>(self, state: N) -> TrackerDownloader<N> {
+    fn update_state<N>(self, state: N) -> TrackerDownloader<N>
+    where
+        N: TrackerDownloaderState,
+    {
         TrackerDownloader {
             state,
             trackers: self.trackers,
@@ -230,6 +233,7 @@ pub struct Announced {
 }
 
 impl DownloaderState for Announced {}
+impl TrackerDownloaderState for Announced {}
 
 impl TrackerDownloader<Announced> {
     #[tracing::instrument(name = "Handshake", skip_all)]
@@ -237,7 +241,7 @@ impl TrackerDownloader<Announced> {
         let peers_buff = DashSet::new();
 
         // Limit the number of outgoing requests being sent at the same time
-        let semaphore = Arc::new(Semaphore::new(100));
+        let semaphore = Arc::new(Semaphore::new(200));
 
         // Buffer to contain thread join handles.
         let futures = FuturesUnordered::new();
@@ -360,57 +364,59 @@ impl TrackerDownloaderState for Handshaken {}
 
 impl TrackerDownloader<Handshaken> {
     #[tracing::instrument(name = "Download::download_all", skip_all)]
-    pub async fn download_all(mut self) -> TrackerDownloader<Downloading> {
-        let mut handles = FuturesUnordered::new();
+    pub async fn unchoke_all(mut self) -> TrackerDownloader<Downloading> {
+        let handles = FuturesUnordered::new();
         let counter = Arc::clone(&self.counters.downloaded);
-        let left = self.left();
 
         while let Some(handshake_result) = self.state.list.next().await {
             match handshake_result {
-                Ok(mut peer) => {
+                Ok(peer) => {
                     let counter = Arc::clone(&counter);
 
                     let handle = tokio::spawn(async move {
                         let addr = peer.get_addr();
 
-                        if let Some(stream) = peer.get_stream_mut() {
+                        if let Some(stream) = peer.get_stream_owned() {
                             tracing::info!(peer = %addr, "Initiating Download");
 
-                            match Self::run_peer_messages(stream, addr, left).await {
-                                Ok(_) => {
-                                    tracing::info!(peer = %peer.get_addr(), "Download initiated successfully");
+                            match Self::unchoke_peer(stream, addr).await {
+                                Ok(downloading) => {
+                                    tracing::info!(
+                                        peer = %addr,
+                                        "Download initiated successfully"
+                                    );
+
                                     counter.fetch_add(1, Ordering::SeqCst);
+                                    return Some(downloading);
                                 }
                                 Err(e) => {
-                                    tracing::warn!(peer = %addr, "Unable to Download from peer: {e}")
+                                    tracing::warn!(peer = %addr, "Unable to Download from peer: {e}");
+                                    return None;
                                 }
-                            };
+                            }
                         }
-                        peer
+                        None
                     });
+
                     handles.push(handle);
                 }
                 Err(e) => tracing::error!("{e}"),
             }
         }
 
-        while let Some(future) = handles.next().await {
-            if future.is_ok() {}
-        }
-
-        self.update_state(Downloading)
+        self.update_state(Downloading { inner: handles })
     }
 
+    // Unchockes a Peer
     #[tracing::instrument(
         name = "Download::peer_messages"
         skip(stream)
     )]
     #[inline]
-    async fn run_peer_messages(
-        stream: &mut TcpStream,
-        peer_addr: SocketAddr,
-        left: usize,
-    ) -> anyhow::Result<()> {
+    async fn unchoke_peer(
+        mut stream: TcpStream,
+        peer: SocketAddr,
+    ) -> anyhow::Result<DownloadingPeer> {
         let mut buf = BytesMut::with_capacity(16 * 1024);
 
         tracing::debug!("Seeking bitfield message");
@@ -444,6 +450,62 @@ impl TrackerDownloader<Handshaken> {
 
         // TODO: Now comes the hard part... send request for each piece in the torrent file
 
+        Ok(DownloadingPeer {
+            peer: Peer::with_stream(peer, stream),
+        })
+    }
+}
+
+/////////////////////////////////////////////////////////////////////////////
+//                              Downloading
+/////////////////////////////////////////////////////////////////////////////
+
+pub struct Downloading {
+    inner: FuturesUnordered<JoinHandle<Option<DownloadingPeer>>>,
+}
+
+struct DownloadingPeer {
+    peer: Peer,
+}
+
+impl TrackerDownloader<Downloading> {
+    #[tracing::instrument(name = "Download::download_all", skip_all)]
+    pub async fn download_all(mut self) -> TrackerDownloader<Downloaded> {
+        let mut handles = FuturesUnordered::new();
+
+        while let Some(future) = self.state.inner.next().await {
+            match future {
+                Ok(peer) => {
+                    if let Some(peer) = peer {
+                        let addr = peer.peer.get_addr();
+                        if let Some(stream) = peer.peer.get_stream_owned() {
+                            let handle =
+                                tokio::spawn(async move { Self::get_piece(addr, stream).await });
+
+                            handles.push(handle);
+                        }
+                    }
+                }
+                Err(e) => tracing::error!("{e}"),
+            }
+        }
+
+        while let Some(f) = handles.next().await {
+            if f.is_ok() {}
+        }
+
+        self.update_state(Downloaded)
+    }
+
+    // Unchockes a Peer
+    #[tracing::instrument(
+        name = "Download::get_piece"
+        skip(stream)
+    )]
+    async fn get_piece(peer: SocketAddr, mut stream: TcpStream) -> anyhow::Result<()> {
+        // TODO: buffer should be a disk io, and not a in memory buffer.
+        let mut buf = BytesMut::with_capacity(16 * 1024);
+
         tracing::debug!("Sending request message");
 
         stream
@@ -468,7 +530,9 @@ impl TrackerDownloader<Handshaken> {
     }
 }
 
-pub struct Downloading;
-
 impl DownloaderState for Downloading {}
 impl TrackerDownloaderState for Downloading {}
+
+pub struct Downloaded;
+impl DownloaderState for Downloaded {}
+impl TrackerDownloaderState for Downloaded {}

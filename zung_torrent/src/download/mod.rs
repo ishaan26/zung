@@ -134,6 +134,8 @@ impl Downloader<Uninitiated> {
                 .announce_all()
                 .handshake_all()
                 .await
+                .unchoke_all()
+                .await
                 .download_all()
                 .await),
 

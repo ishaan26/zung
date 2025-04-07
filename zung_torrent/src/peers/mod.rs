@@ -94,6 +94,13 @@ pub struct Peer {
 }
 
 impl Peer {
+    pub fn with_stream(addr: SocketAddr, stream: TcpStream) -> Self {
+        Self {
+            addr,
+            stream: Some(stream),
+        }
+    }
+
     /// Performs the BitTorrent handshake with the [`Peer`].
     ///
     /// This method establishes a TCP connection with the peer and exchanges handshake messages
@@ -165,6 +172,10 @@ impl Peer {
     /// Get a mutable reference to the TCP stream if the [`handshake`](Self::handshake) was successful.
     pub fn get_stream_mut(&mut self) -> Option<&mut TcpStream> {
         self.stream.as_mut()
+    }
+
+    pub fn get_stream_owned(self) -> Option<TcpStream> {
+        self.stream
     }
 
     /// Check if the peer is connected or not.
