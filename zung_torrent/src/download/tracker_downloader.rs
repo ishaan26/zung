@@ -16,12 +16,12 @@ use crate::{
     meta_info::InfoHashEncoded,
     peers::{BitfieldPayload, Peer, PeerMessage, PeerMessageFrame, PiecePayload},
     trackers::{Tracker, TrackersList},
-    TIMEOUT_DURATION,
+    CONCURRENCY_LIMIT, TIMEOUT_DURATION,
 };
 
 use super::{DownloaderState, Uninitiated};
 
-pub const BLOCK_MAX: u32 = 1 << 14; /* 16 Kbi*/
+pub const BLOCK_MAX: u32 = 1024 * 16; /* 16 Kbi*/
 
 /// A state machine that manages the process of downloading from trackers in a BitTorrent client.
 ///
@@ -241,7 +241,7 @@ impl TrackerDownloader<Announced> {
         let peers_buff = DashSet::new();
 
         // Limit the number of outgoing requests being sent at the same time
-        let semaphore = Arc::new(Semaphore::new(200));
+        let semaphore = Arc::new(Semaphore::new(CONCURRENCY_LIMIT));
 
         // Buffer to contain thread join handles.
         let futures = FuturesUnordered::new();
@@ -363,16 +363,13 @@ impl DownloaderState for Handshaken {}
 impl TrackerDownloaderState for Handshaken {}
 
 impl TrackerDownloader<Handshaken> {
-    #[tracing::instrument(name = "Download::download_all", skip_all)]
+    #[tracing::instrument(name = "Download::unchoke_all", skip_all)]
     pub async fn unchoke_all(mut self) -> TrackerDownloader<Downloading> {
         let handles = FuturesUnordered::new();
-        let counter = Arc::clone(&self.counters.downloaded);
 
         while let Some(handshake_result) = self.state.list.next().await {
             match handshake_result {
                 Ok(peer) => {
-                    let counter = Arc::clone(&counter);
-
                     let handle = tokio::spawn(async move {
                         let addr = peer.get_addr();
 
@@ -386,7 +383,6 @@ impl TrackerDownloader<Handshaken> {
                                         "Download initiated successfully"
                                     );
 
-                                    counter.fetch_add(1, Ordering::SeqCst);
                                     return Some(downloading);
                                 }
                                 Err(e) => {
@@ -417,7 +413,7 @@ impl TrackerDownloader<Handshaken> {
         mut stream: TcpStream,
         peer: SocketAddr,
     ) -> anyhow::Result<DownloadingPeer> {
-        let mut buf = BytesMut::with_capacity(16 * 1024);
+        let mut buf = BytesMut::with_capacity(BLOCK_MAX as usize);
 
         tracing::debug!("Seeking bitfield message");
 
@@ -472,15 +468,24 @@ impl TrackerDownloader<Downloading> {
     #[tracing::instrument(name = "Download::download_all", skip_all)]
     pub async fn download_all(mut self) -> TrackerDownloader<Downloaded> {
         let mut handles = FuturesUnordered::new();
+        let counter = Arc::clone(&self.counters.downloaded);
 
         while let Some(future) = self.state.inner.next().await {
             match future {
                 Ok(peer) => {
                     if let Some(peer) = peer {
+                        let counter = Arc::clone(&counter);
                         let addr = peer.peer.get_addr();
+
                         if let Some(stream) = peer.peer.get_stream_owned() {
-                            let handle =
-                                tokio::spawn(async move { Self::get_piece(addr, stream).await });
+                            let handle = tokio::spawn(async move {
+                                counter.fetch_add(1, Ordering::SeqCst);
+
+                                match Self::get_piece(addr, stream).await {
+                                    Ok(_) => tracing::info!("Download Compelte"),
+                                    Err(e) => tracing::warn!("Unable to download: {e}"),
+                                }
+                            });
 
                             handles.push(handle);
                         }
@@ -497,7 +502,7 @@ impl TrackerDownloader<Downloading> {
         self.update_state(Downloaded)
     }
 
-    // Unchockes a Peer
+    // Downloads Piece data
     #[tracing::instrument(
         name = "Download::get_piece"
         skip(stream)
@@ -522,7 +527,7 @@ impl TrackerDownloader<Downloading> {
             .timeout(TIMEOUT_DURATION)
             .await??;
 
-        dbg!(piece.payload().block());
+        dbg!(piece.payload().block().len());
 
         tracing::debug!("Piece message received");
 

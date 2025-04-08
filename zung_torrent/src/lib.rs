@@ -19,6 +19,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 pub const TIMEOUT_DURATION: Duration = Duration::from_secs(5);
+pub const CONCURRENCY_LIMIT: usize = 200;
 
 const URL_ENCODE_TABLE: [[u8; 3]; 256] = {
     let mut table = [[0; 3]; 256];
