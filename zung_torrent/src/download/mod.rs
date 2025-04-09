@@ -14,6 +14,7 @@ mod tracker_downloader;
 
 pub use http_seeder_downloader::HttpSeederDownloader;
 pub use sources::DownloadSources;
+// pub use tracker_downloader::TrackerDownloader;
 pub use tracker_downloader::TrackerDownloader;
 use tracker_downloader::TrackerDownloaderState;
 
@@ -132,10 +133,6 @@ impl Downloader<Uninitiated> {
             Downloader::TrackerDownloader(tracker_downloader) => Ok(tracker_downloader
                 .initiate()
                 .announce_all()
-                .handshake_all()
-                .await
-                .unchoke_all()
-                .await
                 .download_all()
                 .await),
 

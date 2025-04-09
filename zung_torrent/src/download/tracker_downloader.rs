@@ -9,7 +9,13 @@ use std::{
 use bytes::BytesMut;
 use dashmap::DashSet;
 use futures::{stream::FuturesUnordered, StreamExt};
-use tokio::{net::TcpStream, sync::Semaphore, task::JoinHandle};
+use tokio::{
+    net::TcpStream,
+    sync::{
+        mpsc::{self, Receiver},
+        Semaphore,
+    },
+};
 use tokio_util::time::FutureExt;
 
 use crate::{
@@ -163,23 +169,21 @@ impl TrackerDownloader<UnAnnounced> {
     pub fn announce_all(self) -> TrackerDownloader<Announced> {
         let left = self.left();
 
-        let futures: FuturesUnordered<_> = self
-            .trackers
-            .iter()
-            .filter(|t| !t.is_connected())
-            .cloned() // This performs an Arc clone on the interal type.
-            .map(|tracker| -> JoinHandle<Tracker> {
-                let counter = Arc::clone(&self.counters.announced);
+        let (tx, rx) = mpsc::channel(1024);
 
-                // TODO: Think reannouncing.
-                tokio::spawn(async move {
-                    // Created a separate Functions because tracing doesnot work otherwise.
-                    Self::announce_to_tracker(tracker, self.info_hash, left, counter).await
-                })
-            })
-            .collect();
+        let trackers = self.trackers.iter().filter(|t| !t.is_connected()).cloned(); // This performs an Arc clone on the interal type.
 
-        self.update_state(Announced { list: futures })
+        for tracker in trackers {
+            let counter = Arc::clone(&self.counters.announced);
+            let tx = tx.clone();
+            tokio::spawn(async move {
+                tx.send(Self::announce_to_tracker(tracker, self.info_hash, left, counter).await)
+                    .await
+                    .unwrap();
+            });
+        }
+
+        self.update_state(Announced { stream: rx })
     }
 
     #[tracing::instrument(
@@ -229,7 +233,7 @@ impl TrackerDownloaderState for UnAnnounced {}
 
 #[derive(Debug)]
 pub struct Announced {
-    list: FuturesUnordered<JoinHandle<Tracker>>,
+    stream: Receiver<Tracker>,
 }
 
 impl DownloaderState for Announced {}
@@ -237,93 +241,95 @@ impl TrackerDownloaderState for Announced {}
 
 impl TrackerDownloader<Announced> {
     #[tracing::instrument(name = "Handshake", skip_all)]
-    pub async fn handshake_all(mut self) -> TrackerDownloader<Handshaken> {
+    pub async fn download_all(mut self) -> TrackerDownloader<Downloaded> {
         let peers_buff = DashSet::new();
 
         // Limit the number of outgoing requests being sent at the same time
         let semaphore = Arc::new(Semaphore::new(CONCURRENCY_LIMIT));
 
-        // Buffer to contain thread join handles.
-        let futures = FuturesUnordered::new();
+        let mut handles = FuturesUnordered::new();
 
         // Await on the Announced joinhandles asyncly and if successfull, handshake with the peers
         // inside the TrackerResponse.
-        while let Some(tracker) = self.state.list.next().await {
-            match tracker {
-                Err(e) => {
-                    tracing::error!("Announce thread failed: {e}");
+        while let Some(announced_tracker) = self.state.stream.recv().await {
+            let guraded_response = announced_tracker.get_response_guarded();
+            let peers_list = guraded_response.get_peers_list();
+
+            match peers_list {
+                None => {
+                    tracing::warn!(
+                        tracker_url = %announced_tracker.url(),
+                        "Tracker does not contain any peers"
+                    );
+
                     continue;
                 }
-                Ok(announced_tracker) => {
-                    if !announced_tracker.is_connected() {
-                        continue;
-                    }
 
-                    let guraded_response = announced_tracker.get_response_guarded();
-                    let peers_list = guraded_response.get_peers_list();
+                Some(list) if list.num_of_peers() == 0 => {
+                    tracing::warn!(
+                        tracker_url = %announced_tracker.url(),
+                        "Tracker sent an empty peers list"
+                    );
 
-                    match peers_list {
-                        None => {
-                            tracing::warn!(
-                                tracker_url = %announced_tracker.url(),
-                                "Tracker does not contain any peers"
+                    continue;
+                }
+
+                Some(list) => {
+                    let counter = Arc::clone(&self.counters.handshaken);
+                    for peer in list.iter() {
+                        // If the unique peer is inserted in the hashset, spawn a thread to
+                        // handshake with it.
+
+                        if peers_buff.insert(peer.clone()) {
+                            let peer = peer.clone(); // This performs an Arc Clone
+                            let semaphore = semaphore.clone();
+
+                            tracing::debug!(
+                            peer = %peer.get_addr(),
+                            "Unique peer found"
                             );
 
-                            continue;
-                        }
-
-                        Some(list) if list.num_of_peers() == 0 => {
-                            tracing::warn!(
-                                tracker_url = %announced_tracker.url(),
-                                "Tracker sent an empty peers list"
+                            tracing::info!(
+                                peer= %peer.get_addr(),
+                                "Initiating Handshake"
                             );
 
-                            continue;
-                        }
+                            let counter = Arc::clone(&counter);
 
-                        Some(list) => {
-                            for peer in list.iter() {
-                                // If the unique peer is inserted in the hashset, spawn a thread to
-                                // handshake with it.
+                            let handle = tokio::spawn(async move {
+                                let _permit = semaphore.acquire().await.unwrap();
 
-                                if peers_buff.insert(peer.clone()) {
-                                    let peer = peer.clone(); // This performs an Arc Clone
-                                    let semaphore = semaphore.clone();
+                                // Created a separate Functions because tracing doesnot work otherwise.
+                                let peer =
+                                    Self::handshake_unique_peer(peer, self.info_hash, counter)
+                                        .await;
 
-                                    tracing::debug!(
-                                    peer = %peer.get_addr(),
-                                    "Unique peer found"
-                                    );
+                                let addr = peer.get_addr();
 
-                                    tracing::info!(
-                                        peer= %peer.get_addr(),
-                                        "Initiating Handshake"
-                                    );
-
-                                    let counter = Arc::clone(&self.counters.handshaken);
-
-                                    let handle = tokio::spawn(async move {
-                                        let _permit = semaphore.acquire().await.unwrap();
-
-                                        // Created a separate Functions because tracing doesnot work otherwise.
-                                        Self::handshake_unique_peer(peer, self.info_hash, counter)
-                                            .await
-                                    });
-
-                                    futures.push(handle);
+                                if let Some(stream) = peer.get_stream_owned() {
+                                    match Self::get_piece(stream, addr).await {
+                                        Ok(_) => tracing::info!("Download complete"),
+                                        Err(e) => tracing::error!("Unable to download: {e}"),
+                                    }
                                 }
-                            }
+                            });
+
+                            handles.push(handle);
                         }
                     }
                 }
-            }
+            };
+        }
+
+        while let Some(handle) = handles.next().await {
+            if handle.is_ok() {}
         }
 
         self.counters
             .peers
             .store(peers_buff.len(), Ordering::Relaxed);
 
-        self.update_state(Handshaken { list: futures })
+        self.update_state(Downloaded)
     }
 
     #[tracing::instrument(
@@ -348,71 +354,13 @@ impl TrackerDownloader<Announced> {
             }
         }
     }
-}
 
-/////////////////////////////////////////////////////////////////////////////
-//                              Handshaken Peers
-/////////////////////////////////////////////////////////////////////////////
-
-#[derive(Debug)]
-pub struct Handshaken {
-    list: FuturesUnordered<JoinHandle<Peer>>,
-}
-
-impl DownloaderState for Handshaken {}
-impl TrackerDownloaderState for Handshaken {}
-
-impl TrackerDownloader<Handshaken> {
-    #[tracing::instrument(name = "Download::unchoke_all", skip_all)]
-    pub async fn unchoke_all(mut self) -> TrackerDownloader<Downloading> {
-        let handles = FuturesUnordered::new();
-
-        while let Some(handshake_result) = self.state.list.next().await {
-            match handshake_result {
-                Ok(peer) => {
-                    let handle = tokio::spawn(async move {
-                        let addr = peer.get_addr();
-
-                        if let Some(stream) = peer.get_stream_owned() {
-                            tracing::info!(peer = %addr, "Initiating Download");
-
-                            match Self::unchoke_peer(stream, addr).await {
-                                Ok(downloading) => {
-                                    tracing::info!(
-                                        peer = %addr,
-                                        "Download initiated successfully"
-                                    );
-
-                                    return Some(downloading);
-                                }
-                                Err(e) => {
-                                    tracing::warn!(peer = %addr, "Unable to Download from peer: {e}");
-                                    return None;
-                                }
-                            }
-                        }
-                        None
-                    });
-
-                    handles.push(handle);
-                }
-                Err(e) => tracing::error!("{e}"),
-            }
-        }
-
-        self.update_state(Downloading { inner: handles })
-    }
-
-    // Unchockes a Peer
     #[tracing::instrument(
         name = "Download::peer_messages"
         skip(stream)
     )]
     #[inline]
-    async fn unchoke_peer(
-        mut stream: TcpStream,
-        peer: SocketAddr,
-    ) -> anyhow::Result<DownloadingPeer> {
+    async fn get_piece(mut stream: TcpStream, peer: SocketAddr) -> anyhow::Result<()> {
         let mut buf = BytesMut::with_capacity(BLOCK_MAX as usize);
 
         tracing::debug!("Seeking bitfield message");
@@ -446,71 +394,6 @@ impl TrackerDownloader<Handshaken> {
 
         // TODO: Now comes the hard part... send request for each piece in the torrent file
 
-        Ok(DownloadingPeer {
-            peer: Peer::with_stream(peer, stream),
-        })
-    }
-}
-
-/////////////////////////////////////////////////////////////////////////////
-//                              Downloading
-/////////////////////////////////////////////////////////////////////////////
-
-pub struct Downloading {
-    inner: FuturesUnordered<JoinHandle<Option<DownloadingPeer>>>,
-}
-
-struct DownloadingPeer {
-    peer: Peer,
-}
-
-impl TrackerDownloader<Downloading> {
-    #[tracing::instrument(name = "Download::download_all", skip_all)]
-    pub async fn download_all(mut self) -> TrackerDownloader<Downloaded> {
-        let mut handles = FuturesUnordered::new();
-        let counter = Arc::clone(&self.counters.downloaded);
-
-        while let Some(future) = self.state.inner.next().await {
-            match future {
-                Ok(peer) => {
-                    if let Some(peer) = peer {
-                        let counter = Arc::clone(&counter);
-                        let addr = peer.peer.get_addr();
-
-                        if let Some(stream) = peer.peer.get_stream_owned() {
-                            let handle = tokio::spawn(async move {
-                                counter.fetch_add(1, Ordering::SeqCst);
-
-                                match Self::get_piece(addr, stream).await {
-                                    Ok(_) => tracing::info!("Download Compelte"),
-                                    Err(e) => tracing::warn!("Unable to download: {e}"),
-                                }
-                            });
-
-                            handles.push(handle);
-                        }
-                    }
-                }
-                Err(e) => tracing::error!("{e}"),
-            }
-        }
-
-        while let Some(f) = handles.next().await {
-            if f.is_ok() {}
-        }
-
-        self.update_state(Downloaded)
-    }
-
-    // Downloads Piece data
-    #[tracing::instrument(
-        name = "Download::get_piece"
-        skip(stream)
-    )]
-    async fn get_piece(peer: SocketAddr, mut stream: TcpStream) -> anyhow::Result<()> {
-        // TODO: buffer should be a disk io, and not a in memory buffer.
-        let mut buf = BytesMut::with_capacity(16 * 1024);
-
         tracing::debug!("Sending request message");
 
         stream
@@ -534,9 +417,6 @@ impl TrackerDownloader<Downloading> {
         Ok(())
     }
 }
-
-impl DownloaderState for Downloading {}
-impl TrackerDownloaderState for Downloading {}
 
 pub struct Downloaded;
 impl DownloaderState for Downloaded {}
