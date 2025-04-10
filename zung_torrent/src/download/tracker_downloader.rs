@@ -132,7 +132,19 @@ impl Clone for Counters {
 /////////////////////////////////////////////////////////////////////////////
 
 impl TrackerDownloader<Uninitiated> {
-    pub fn new(
+    /// Creates a new [`TrackerDownloader`] in the [`Uninitiated`] state.
+    ///
+    /// # Parameters
+    ///
+    /// * `trackers` - A thread-safe reference to the list of trackers to download from
+    /// * `info_hash` - The encoded info hash of the torrent
+    /// * `left` - A thread-safe counter for the number of bytes left to download
+    /// * `downloaded` - A thread-safe counter for the number of bytes already downloaded
+    ///
+    /// # Returns
+    ///
+    /// A new `TrackerDownloader` in the `Uninitiated` state
+    pub(crate) fn new(
         trackers: Arc<TrackersList>,
         info_hash: InfoHashEncoded,
         left: Arc<AtomicUsize>,
@@ -147,7 +159,18 @@ impl TrackerDownloader<Uninitiated> {
             counters: Counters::new(),
         }
     }
+}
 
+impl TrackerDownloader<Uninitiated> {
+    /// Transitions the downloader from the `Uninitiated` state to the `UnAnnounced` state.
+    ///
+    /// This method prepares the downloader to announce to trackers by creating a new
+    /// `TrackerDownloader` instance in the `UnAnnounced` state, while preserving all
+    /// the internal state and counters.
+    ///
+    /// # Returns
+    ///
+    /// A new `TrackerDownloader` in the `UnAnnounced` state
     pub fn initiate(&self) -> TrackerDownloader<UnAnnounced> {
         TrackerDownloader {
             state: UnAnnounced,
@@ -165,6 +188,21 @@ impl TrackerDownloader<Uninitiated> {
 /////////////////////////////////////////////////////////////////////////////
 
 impl TrackerDownloader<UnAnnounced> {
+    /// Announces to all trackers in the tracker list that haven't been announced to yet.
+    ///
+    /// This method initiates the announcement process to all unconnected trackers in parallel.
+    /// For each tracker, it spawns a separate task that attempts to announce the client's presence
+    /// and interest in downloading the torrent. Successfully announced trackers will have their
+    /// connection state updated.
+    ///
+    /// # Returns
+    ///
+    /// A new `TrackerDownloader` in the `Announced` state, which contains a channel receiver
+    /// that will receive the results of the announcement attempts.
+    ///
+    /// # State Transition
+    ///
+    /// This method transitions the downloader from the `UnAnnounced` state to the `Announced` state.
     #[tracing::instrument(name = "Announce All", skip(self))]
     pub fn announce_all(self) -> TrackerDownloader<Announced> {
         let left = self.left();
@@ -241,6 +279,25 @@ impl TrackerDownloaderState for Announced {}
 
 impl TrackerDownloader<Announced> {
     #[tracing::instrument(name = "Handshake", skip_all)]
+    /// Initiates the download process from all announced trackers.
+    ///
+    /// This method processes the announced trackers and attempts to download from their peers.
+    /// For each unique peer discovered from the trackers:
+    /// 1. It establishes a handshake connection
+    /// 2. Exchanges BitTorrent protocol messages
+    /// 3. Requests and downloads pieces
+    ///
+    /// The method uses a semaphore to limit concurrent connections to [`CONCURRENCY_LIMIT`]
+    /// and tracks unique peers to avoid duplicate connections.
+    ///
+    /// # Returns
+    ///
+    /// A new `TrackerDownloader` in the `Downloaded` state, indicating that the download
+    /// process has been completed or attempted for all available peers.
+    ///
+    /// # State Transition
+    ///
+    /// This method transitions the downloader from the `Announced` state to the `Downloaded` state.
     pub async fn download_all(mut self) -> TrackerDownloader<Downloaded> {
         let peers_buff = DashSet::new();
 
