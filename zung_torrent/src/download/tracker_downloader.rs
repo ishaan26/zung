@@ -6,7 +6,6 @@ use std::{
     },
 };
 
-use bytes::BytesMut;
 use dashmap::DashSet;
 use futures::{stream::FuturesUnordered, StreamExt};
 use tokio::{
@@ -20,14 +19,12 @@ use tokio_util::time::FutureExt;
 
 use crate::{
     meta_info::InfoHashEncoded,
-    peers::{BitfieldPayload, Peer, PeerMessage, PeerMessageFrame, PiecePayload},
+    peers::{PeerMessage, PeerMessageFrame, Piece, BLOCK_MAX},
     trackers::{Tracker, TrackersList},
     CONCURRENCY_LIMIT, TIMEOUT_DURATION,
 };
 
 use super::{DownloaderState, Uninitiated};
-
-pub const BLOCK_MAX: u32 = 1024 * 16; /* 16 Kbi*/
 
 /// A state machine that manages the process of downloading from trackers in a BitTorrent client.
 ///
@@ -287,7 +284,7 @@ impl TrackerDownloader<Announced> {
     /// 2. Exchanges BitTorrent protocol messages
     /// 3. Requests and downloads pieces
     ///
-    /// The method uses a semaphore to limit concurrent connections to [`CONCURRENCY_LIMIT`]
+    /// The method uses a semaphore to limit concurrent connections to [`crate::CONCURRENCY_LIMIT`]
     /// and tracks unique peers to avoid duplicate connections.
     ///
     /// # Returns
@@ -356,19 +353,22 @@ impl TrackerDownloader<Announced> {
                             let handle = tokio::spawn(async move {
                                 let _permit = semaphore.acquire().await.unwrap();
 
-                                // Created a separate Functions because tracing doesnot work otherwise.
-                                let peer =
-                                    Self::handshake_unique_peer(peer, self.info_hash, counter)
-                                        .await;
+                                // Unchoke the peer
+                                let peer_unchoked =
+                                    peer.handshake(self.info_hash).await?.unchoke().await?;
 
-                                let addr = peer.get_addr();
+                                counter.fetch_add(1, Ordering::SeqCst);
 
-                                if let Some(stream) = peer.get_stream_owned() {
-                                    match Self::get_piece(stream, addr).await {
-                                        Ok(_) => tracing::info!("Download complete"),
-                                        Err(e) => tracing::error!("Unable to download: {e}"),
-                                    }
+                                let addr = peer_unchoked.get_addr();
+
+                                // Download the peer
+                                match Self::get_piece(peer_unchoked.get_stream_owned(), addr).await
+                                {
+                                    Ok(_) => tracing::info!("Download complete"),
+                                    Err(e) => tracing::error!("Unable to download: {e}"),
                                 }
+
+                                Ok::<(), anyhow::Error>(())
                             });
 
                             handles.push(handle);
@@ -379,7 +379,14 @@ impl TrackerDownloader<Announced> {
         }
 
         while let Some(handle) = handles.next().await {
-            if handle.is_ok() {}
+            match handle {
+                Ok(result) => {
+                    if let Err(e) = result {
+                        tracing::warn!("Peer download task failed: {e}");
+                    }
+                }
+                Err(e) => tracing::error!("Peer task panicked: {e}"),
+            }
         }
 
         self.counters
@@ -390,66 +397,13 @@ impl TrackerDownloader<Announced> {
     }
 
     #[tracing::instrument(
-        name = "Handshake::handshake_unique_peer"
-        skip_all
-        fields(peer = %peer.get_addr())
-    )]
-    async fn handshake_unique_peer(
-        peer: Peer,
-        info_hash: InfoHashEncoded,
-        counter: Arc<AtomicUsize>,
-    ) -> Peer {
-        match peer.handshake(info_hash).await {
-            Ok(peer) => {
-                tracing::info!("Connected to Peer");
-                counter.fetch_add(1, Ordering::SeqCst);
-                peer
-            }
-            Err(e) => {
-                tracing::warn!("Unable to connect to Peer: {}", e.to_string());
-                peer
-            }
-        }
-    }
-
-    #[tracing::instrument(
         name = "Download::peer_messages"
         skip(stream)
     )]
     #[inline]
     async fn get_piece(mut stream: TcpStream, peer: SocketAddr) -> anyhow::Result<()> {
-        let mut buf = BytesMut::with_capacity(BLOCK_MAX as usize);
-
-        tracing::debug!("Seeking bitfield message");
-
-        stream
-            .recv_peer_message::<BitfieldPayload>(&mut buf)
-            .timeout(TIMEOUT_DURATION)
-            .await??;
-
-        tracing::debug!("Bitfield message received");
-
-        buf.clear();
-
-        tracing::debug!("Sending unchoke message");
-
-        stream
-            .send_peer_message(PeerMessage::interested())
-            .timeout(TIMEOUT_DURATION)
-            .await??;
-
-        tracing::info!("Unchoke Message sent");
-
-        tracing::debug!("Seeking unchoke message");
-
-        stream
-            .recv_unchoke_message()
-            .timeout(TIMEOUT_DURATION)
-            .await??;
-
-        tracing::debug!("Unchoke message received");
-
         // TODO: Now comes the hard part... send request for each piece in the torrent file
+        let mut buf = bytes::BytesMut::with_capacity(BLOCK_MAX as usize);
 
         tracing::debug!("Sending request message");
 
@@ -463,7 +417,7 @@ impl TrackerDownloader<Announced> {
         tracing::debug!("Seeking piece message");
 
         let piece = stream
-            .recv_peer_message::<PiecePayload>(&mut buf)
+            .recv_peer_message::<Piece>(&mut buf)
             .timeout(TIMEOUT_DURATION)
             .await??;
 

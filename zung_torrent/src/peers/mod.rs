@@ -66,6 +66,7 @@
 mod handshake;
 mod peer_messages;
 
+use bytes::BytesMut;
 pub use handshake::*;
 pub use peer_messages::*;
 
@@ -86,21 +87,142 @@ use serde::{de::Visitor, Deserialize, Serialize, Serializer};
 
 use crate::{meta_info::InfoHashEncoded, TIMEOUT_DURATION};
 
-/// Reprasents a single peer within the [`PeersList`]
+pub const BLOCK_MAX: u32 = 1024 * 16; /* 16 Kbi*/
+
 #[derive(Debug)]
-pub struct Peer {
-    addr: SocketAddr,
-    stream: Option<TcpStream>,
+pub struct Unconnected;
+
+#[derive(Debug)]
+pub struct Handshaken {
+    stream: TcpStream,
 }
 
-impl Peer {
-    pub fn with_stream(addr: SocketAddr, stream: TcpStream) -> Self {
-        Self {
-            addr,
-            stream: Some(stream),
-        }
+#[derive(Debug)]
+pub struct Unchoked {
+    stream: TcpStream,
+    bitfield: PeerMessage<Bitfield>,
+}
+
+pub trait ConnectedPeer {
+    fn get_stream_mut(&mut self) -> &mut TcpStream;
+    fn get_stream_owned(self) -> TcpStream;
+}
+
+impl ConnectedPeer for Handshaken {
+    fn get_stream_mut(&mut self) -> &mut TcpStream {
+        &mut self.stream
     }
 
+    fn get_stream_owned(self) -> TcpStream {
+        self.stream
+    }
+}
+
+impl ConnectedPeer for Unchoked {
+    fn get_stream_mut(&mut self) -> &mut TcpStream {
+        &mut self.stream
+    }
+
+    fn get_stream_owned(self) -> TcpStream {
+        self.stream
+    }
+}
+
+/// Reprasents a single peer within the [`PeersList`]
+#[derive(Debug)]
+pub struct Peer<T = Unconnected> {
+    addr: SocketAddr,
+    state: T,
+}
+
+impl<T> Peer<T>
+where
+    T: ConnectedPeer,
+{
+    /// Get a mutable reference to the TCP stream if the [`handshake`](Self::handshake) was successful.
+    pub fn get_stream_mut(&mut self) -> &mut TcpStream {
+        self.state.get_stream_mut()
+    }
+
+    pub fn get_stream_owned(self) -> TcpStream {
+        self.state.get_stream_owned()
+    }
+}
+
+impl Peer<Unchoked> {
+    pub fn get_bitfield(&self) -> &Bitfield {
+        self.state.bitfield.payload()
+    }
+}
+
+impl Peer<Handshaken> {
+    /// Transitions a handshaken peer to the unchoked state.
+    ///
+    /// After a successful handshake, this method performs the BitTorrent protocol sequence to:
+    /// 1. Receive the peer's bitfield (indicating which pieces they have)
+    /// 2. Send an "interested" message to the peer
+    /// 3. Wait for an "unchoke" message from the peer
+    ///
+    /// Once unchoked, the peer connection can be used to request and download pieces.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Peer<Unchoked>>` - A peer in the unchoked state if successful
+    ///
+    /// # Errors
+    ///
+    /// This method will return an error if:
+    /// - The bitfield message cannot be received
+    /// - The interested message cannot be sent
+    /// - The unchoke message is not received
+    /// - Any operation times out
+    #[tracing::instrument(
+        name = "Unchoke"
+        skip_all
+        fields(peer = %self.get_addr())
+    )]
+    pub async fn unchoke(self) -> anyhow::Result<Peer<Unchoked>> {
+        let mut buf = BytesMut::with_capacity(BLOCK_MAX as usize);
+        let addr = self.addr;
+        let mut stream = self.get_stream_owned();
+
+        tracing::debug!("Seeking bitfield message");
+
+        let bitfield = stream
+            .recv_peer_message::<Bitfield>(&mut buf)
+            .timeout(TIMEOUT_DURATION)
+            .await??;
+
+        tracing::debug!("Bitfield message received");
+
+        buf.clear();
+
+        tracing::debug!("Sending unchoke message");
+
+        stream
+            .send_peer_message(PeerMessage::interested())
+            .timeout(TIMEOUT_DURATION)
+            .await??;
+
+        tracing::info!("Unchoke Message sent");
+
+        tracing::debug!("Seeking unchoke message");
+
+        stream
+            .recv_unchoke_message()
+            .timeout(TIMEOUT_DURATION)
+            .await??;
+
+        tracing::debug!("Unchoke message received");
+
+        Ok(Peer {
+            addr,
+            state: Unchoked { stream, bitfield },
+        })
+    }
+}
+
+impl Peer<Unconnected> {
     /// Performs the BitTorrent handshake with the [`Peer`].
     ///
     /// This method establishes a TCP connection with the peer and exchanges handshake messages
@@ -122,8 +244,12 @@ impl Peer {
     /// - The handshake message cannot be sent or received
     /// - The received handshake is invalid or doesn't match the expected format
     /// - The peer doesn't respond within the timeout period
-    #[tracing::instrument(skip_all)]
-    pub async fn handshake(&self, info_hash: InfoHashEncoded) -> Result<Self> {
+    #[tracing::instrument(
+        name = "Handshake"
+        skip_all
+        fields(peer = %self.get_addr())
+    )]
+    pub async fn handshake(self, info_hash: InfoHashEncoded) -> Result<Peer<Handshaken>> {
         let mut stream = TcpStream::connect(self.addr)
             .timeout(TIMEOUT_DURATION)
             .await??;
@@ -158,29 +284,17 @@ impl Peer {
 
         tracing::info!("Handshake complete");
 
-        Ok(Self {
+        Ok(Peer {
             addr: self.addr,
-            stream: Some(stream),
+            state: Handshaken { stream },
         })
     }
+}
 
+impl<T> Peer<T> {
     /// Returns the [`SocketAddr`] of the Peer.
     pub const fn get_addr(&self) -> SocketAddr {
         self.addr
-    }
-
-    /// Get a mutable reference to the TCP stream if the [`handshake`](Self::handshake) was successful.
-    pub fn get_stream_mut(&mut self) -> Option<&mut TcpStream> {
-        self.stream.as_mut()
-    }
-
-    pub fn get_stream_owned(self) -> Option<TcpStream> {
-        self.stream
-    }
-
-    /// Check if the peer is connected or not.
-    pub fn is_handshaken(&self) -> bool {
-        self.stream.is_some()
     }
 
     /// Get ip addr octests
@@ -200,34 +314,34 @@ impl Peer {
     }
 }
 
-impl Clone for Peer {
+impl Clone for Peer<Unconnected> {
     fn clone(&self) -> Self {
         Self {
             addr: self.addr,
-            stream: None,
+            state: Unconnected,
         }
     }
 }
 
-impl Hash for Peer {
+impl<T> Hash for Peer<T> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.addr.hash(state);
     }
 }
 
-impl PartialEq for Peer {
+impl<T> PartialEq for Peer<T> {
     fn eq(&self, other: &Self) -> bool {
         self.addr == other.addr
     }
 }
 
-impl PartialEq<SocketAddr> for Peer {
+impl<T> PartialEq<SocketAddr> for Peer<T> {
     fn eq(&self, other: &SocketAddr) -> bool {
         &self.addr == other
     }
 }
 
-impl PartialEq<SocketAddrV4> for Peer {
+impl<T> PartialEq<SocketAddrV4> for Peer<T> {
     fn eq(&self, other: &SocketAddrV4) -> bool {
         match &self.addr {
             SocketAddr::V4(socket_addr_v4) => socket_addr_v4 == other,
@@ -236,7 +350,7 @@ impl PartialEq<SocketAddrV4> for Peer {
     }
 }
 
-impl PartialEq<SocketAddrV6> for Peer {
+impl<T> PartialEq<SocketAddrV6> for Peer<T> {
     fn eq(&self, other: &SocketAddrV6) -> bool {
         match &self.addr {
             SocketAddr::V4(..) => false,
@@ -245,22 +359,22 @@ impl PartialEq<SocketAddrV6> for Peer {
     }
 }
 
-impl Eq for Peer {}
+impl<T> Eq for Peer<T> {}
 
-impl From<SocketAddrV4> for Peer {
+impl From<SocketAddrV4> for Peer<Unconnected> {
     fn from(value: SocketAddrV4) -> Self {
         Self {
             addr: SocketAddr::from(value),
-            stream: None,
+            state: Unconnected,
         }
     }
 }
 
-impl From<SocketAddrV6> for Peer {
+impl From<SocketAddrV6> for Peer<Unconnected> {
     fn from(value: SocketAddrV6) -> Self {
         Self {
             addr: SocketAddr::from(value),
-            stream: None,
+            state: Unconnected,
         }
     }
 }

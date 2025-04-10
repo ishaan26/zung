@@ -32,22 +32,22 @@ impl PeerMessage<()> {
     /// `Choke` is a notification that no requests will be answered until the client is unchoked. The
     /// client should not attempt to send requests for blocks, and it should consider all pending
     /// (unanswered) requests to be discarded by the remote peer.
-    pub const fn choke() -> PeerMessage<ChokePayload> {
+    pub const fn choke() -> PeerMessage<Choke> {
         PeerMessage {
-            len: (size_of::<ChokePayload>() + 1) as u32,
+            len: (size_of::<Choke>() + 1) as u32,
             tag: PeerMessagesTag::Choke,
-            payload: ChokePayload,
+            payload: Choke,
         }
     }
 
     /// Creates a `PeerMessage` representing the `unchoke` message.
     ///
     /// This message, as the name suggests, opens the chocked connection.
-    pub const fn unchoke() -> PeerMessage<UnchokePayload> {
+    pub const fn unchoke() -> PeerMessage<Unchoke> {
         PeerMessage {
-            len: (size_of::<UnchokePayload>() + 1) as u32,
+            len: (size_of::<Unchoke>() + 1) as u32,
             tag: PeerMessagesTag::Unchoke,
-            payload: UnchokePayload,
+            payload: Unchoke,
         }
     }
 
@@ -55,11 +55,11 @@ impl PeerMessage<()> {
     ///
     /// This message is used to inform the receiver that the sender is interested in downloading
     /// pieces the peer on the other hand has.
-    pub const fn interested() -> PeerMessage<InterestedPayload> {
+    pub const fn interested() -> PeerMessage<Interested> {
         PeerMessage {
-            len: (size_of::<InterestedPayload>() + 1) as u32,
+            len: (size_of::<Interested>() + 1) as u32,
             tag: PeerMessagesTag::Interested,
-            payload: InterestedPayload,
+            payload: Interested,
         }
     }
 
@@ -67,11 +67,11 @@ impl PeerMessage<()> {
     ///
     /// This message is used to inform the receiver that the sender is not interested in
     /// downloading pieces.
-    pub const fn not_interested() -> PeerMessage<NotInterestedPayload> {
+    pub const fn not_interested() -> PeerMessage<NotInterested> {
         PeerMessage {
-            len: (size_of::<NotInterestedPayload>() + 1) as u32,
+            len: (size_of::<NotInterested>() + 1) as u32,
             tag: PeerMessagesTag::NotInterested,
-            payload: NotInterestedPayload,
+            payload: NotInterested,
         }
     }
 
@@ -79,11 +79,11 @@ impl PeerMessage<()> {
     ///
     /// This messavge just informs the index which that downloader just completed and checked the
     /// hash of.
-    pub const fn have(index: u32) -> PeerMessage<HavePayload> {
+    pub const fn have(index: u32) -> PeerMessage<Have> {
         PeerMessage {
-            len: (size_of::<HavePayload>() + 1) as u32,
+            len: (size_of::<Have>() + 1) as u32,
             tag: PeerMessagesTag::Have,
-            payload: HavePayload {
+            payload: Have {
                 index: index.to_be_bytes(),
             },
         }
@@ -104,8 +104,8 @@ impl PeerMessage<()> {
     /// A bitfield of the wrong length is considered an error. Clients should drop the connection
     /// if they receive bitfields that are not of the correct size, or if the bitfield has any of
     /// the spare bits set.
-    pub const fn bitfield(bitfield: &'static [u8]) -> PeerMessage<BitfieldPayload> {
-        let payload = BitfieldPayload(Bytes::from_static(bitfield));
+    pub const fn bitfield(bitfield: &'static [u8]) -> PeerMessage<Bitfield> {
+        let payload = Bitfield(Bytes::from_static(bitfield));
         PeerMessage {
             // NOTE: Cannot use std::mem::size_of here as that would return the size of the fat
             // pointer of the slice instead of the actual size of the underlying slice.
@@ -126,11 +126,11 @@ impl PeerMessage<()> {
     /// - `index`: Integer specifying the zero-based piece index
     /// - `begin`: Integer specifying the zero-based byte offset within the piece
     /// - `length`: Integer specifying the requested length in bytes
-    pub const fn request(index: u32, begin: u32, length: u32) -> PeerMessage<RequestPayload> {
+    pub const fn request(index: u32, begin: u32, length: u32) -> PeerMessage<Request> {
         PeerMessage {
-            len: (size_of::<RequestPayload>() + 1) as u32,
+            len: (size_of::<Request>() + 1) as u32,
             tag: PeerMessagesTag::Request,
-            payload: RequestPayload {
+            payload: Request {
                 index: index.to_be_bytes(),
                 begin: begin.to_be_bytes(),
                 length: length.to_be_bytes(),
@@ -141,7 +141,7 @@ impl PeerMessage<()> {
     /// Creates a `PeerMessage` representing the `piece` message.
     ///
     /// A request message is used to request a block.
-    pub fn piece(index: u32, begin: u32, block: &'static [u8]) -> PeerMessage<PiecePayload> {
+    pub fn piece(index: u32, begin: u32, block: &'static [u8]) -> PeerMessage<Piece> {
         let meta = PiecePayloadMetaData {
             index: index.to_be_bytes(),
             begin: begin.to_be_bytes(),
@@ -153,7 +153,7 @@ impl PeerMessage<()> {
         all.put_slice(&meta.begin);
         all.put_slice(block);
 
-        let payload = PiecePayload {
+        let payload = Piece {
             meta_data: meta,
             all_bytes: all.freeze(),
         };
@@ -270,10 +270,10 @@ where
 /// Assuming you have a byte slice containing a peer message:
 ///
 /// ```rust
-/// use zung_torrent::peers::{PeerMessageExt, PeerMessage, BitfieldPayload};
+/// use zung_torrent::peers::{PeerMessageExt, PeerMessage, Bitfield};
 ///
 /// fn example(bytes: &[u8]) {
-///     let message = bytes.parse_peer_message::<BitfieldPayload>();
+///     let message = bytes.parse_peer_message::<Bitfield>();
 ///
 ///     match message {
 ///         Ok(msg) => println!("Parsed message: {:?}", msg),
@@ -296,33 +296,33 @@ pub trait PeerMessageExt: AsRef<[u8]> {
         PeerMessage::from_bytes(self.as_ref())
     }
 
-    /// Parses the byte slice into a [`PeerMessage`] with a [`ChokePayload`].
-    fn parse_choke(&self) -> Result<PeerMessage<ChokePayload>> {
+    /// Parses the byte slice into a [`PeerMessage`] with a [`Choke`] message.
+    fn parse_choke(&self) -> Result<PeerMessage<Choke>> {
         PeerMessage::from_bytes(self.as_ref())
     }
 
-    /// Parses the byte slice into a [`PeerMessage`] with a [`UnchokePayload`].
-    fn parse_unchoke(&self) -> Result<PeerMessage<UnchokePayload>> {
+    /// Parses the byte slice into a [`PeerMessage`] with a [`Unchoke`] message.
+    fn parse_unchoke(&self) -> Result<PeerMessage<Unchoke>> {
         PeerMessage::from_bytes(self.as_ref())
     }
 
-    /// Parses the byte slice into a [`PeerMessage`] with a [`InterestedPayload`].
-    fn parse_interested(&self) -> Result<PeerMessage<InterestedPayload>> {
+    /// Parses the byte slice into a [`PeerMessage`] with a [`Interested`] message.
+    fn parse_interested(&self) -> Result<PeerMessage<Interested>> {
         PeerMessage::from_bytes(self.as_ref())
     }
 
-    /// Parses the byte slice into a [`PeerMessage`] with a [`NotInterestedPayload`].
-    fn parse_not_interested(&self) -> Result<PeerMessage<NotInterestedPayload>> {
+    /// Parses the byte slice into a [`PeerMessage`] with a [`NotInterested`] message.
+    fn parse_not_interested(&self) -> Result<PeerMessage<NotInterested>> {
         PeerMessage::from_bytes(self.as_ref())
     }
 
-    /// Parses the byte slice into a [`PeerMessage`] with a [`BitfieldPayload`].
-    fn parse_bitfield(&self) -> Result<PeerMessage<BitfieldPayload>> {
+    /// Parses the byte slice into a [`PeerMessage`] with a [`Bitfield`] message.
+    fn parse_bitfield(&self) -> Result<PeerMessage<Bitfield>> {
         PeerMessage::from_bytes(self.as_ref())
     }
 
-    /// Parses the byte slice into a [`PeerMessage`] with a [`PiecePayload`].
-    fn parse_piece(&self) -> Result<PeerMessage<PiecePayload>> {
+    /// Parses the byte slice into a [`PeerMessage`] with a [`Piece`] message.
+    fn parse_piece(&self) -> Result<PeerMessage<Piece>> {
         PeerMessage::from_bytes(self.as_ref())
     }
 }
@@ -450,9 +450,9 @@ where
 /// Payload of the [`PeerMessage::choke`] message.
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
-pub struct ChokePayload;
+pub struct Choke;
 
-impl PeerMessagePayload for ChokePayload {
+impl PeerMessagePayload for Choke {
     fn as_bytes(&self) -> &[u8] {
         &[]
     }
@@ -470,9 +470,9 @@ impl PeerMessagePayload for ChokePayload {
 /// Payload of the [`PeerMessage::unchoke`] message.
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
-pub struct UnchokePayload;
+pub struct Unchoke;
 
-impl PeerMessagePayload for UnchokePayload {
+impl PeerMessagePayload for Unchoke {
     fn as_bytes(&self) -> &[u8] {
         &[]
     }
@@ -490,9 +490,9 @@ impl PeerMessagePayload for UnchokePayload {
 /// Payload of the [`PeerMessage::interested`] message.
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
-pub struct InterestedPayload;
+pub struct Interested;
 
-impl PeerMessagePayload for InterestedPayload {
+impl PeerMessagePayload for Interested {
     fn as_bytes(&self) -> &[u8] {
         &[]
     }
@@ -510,9 +510,9 @@ impl PeerMessagePayload for InterestedPayload {
 /// Payload of the [`PeerMessage::not_interested`] message.
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
-pub struct NotInterestedPayload;
+pub struct NotInterested;
 
-impl PeerMessagePayload for NotInterestedPayload {
+impl PeerMessagePayload for NotInterested {
     fn as_bytes(&self) -> &[u8] {
         &[]
     }
@@ -533,13 +533,13 @@ impl PeerMessagePayload for NotInterestedPayload {
 ///and checked the hash of.
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
-pub struct HavePayload {
+pub struct Have {
     // the zero-based index of a piece that has just been successfully downloaded and verified via
     // the hash.
     index: [u8; 4],
 }
 
-impl PeerMessagePayload for HavePayload {
+impl PeerMessagePayload for Have {
     fn as_bytes(&self) -> &[u8] {
         self.index.as_ref()
     }
@@ -566,9 +566,9 @@ impl PeerMessagePayload for HavePayload {
 ///set bits indicate a valid and available piece. Spare bits at the end are set to zero.
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
-pub struct BitfieldPayload(Bytes);
+pub struct Bitfield(Bytes);
 
-impl PeerMessagePayload for BitfieldPayload {
+impl PeerMessagePayload for Bitfield {
     fn as_bytes(&self) -> &[u8] {
         self.0.as_ref()
     }
@@ -586,13 +586,13 @@ impl PeerMessagePayload for BitfieldPayload {
     }
 }
 
-impl BitfieldPayload {
+impl Bitfield {
     const fn get_size_const(&self) -> usize {
         self.0.len()
     }
 }
 
-impl Deref for BitfieldPayload {
+impl Deref for Bitfield {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
@@ -608,7 +608,7 @@ impl Deref for BitfieldPayload {
 ///that.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RequestPayload {
+pub struct Request {
     // integer specifying the zero-based piece index
     index: [u8; 4],
     // integer specifying the zero-based byte offset within the piece
@@ -617,7 +617,7 @@ pub struct RequestPayload {
     length: [u8; 4],
 }
 
-impl PeerMessagePayload for RequestPayload {
+impl PeerMessagePayload for Request {
     fn as_bytes(&self) -> &[u8] {
         let bytes = self as *const Self as *const [u8; size_of::<Self>()];
         unsafe { &*bytes }
@@ -626,7 +626,7 @@ impl PeerMessagePayload for RequestPayload {
     fn from_bytes(bytes: &[u8]) -> Result<Self> {
         ensure!(bytes.len() == 12);
 
-        Ok(RequestPayload {
+        Ok(Request {
             index: bytes[0..4].try_into()?,
             begin: bytes[4..8].try_into()?,
             length: bytes[8..12].try_into()?,
@@ -648,7 +648,7 @@ impl PeerMessagePayload for RequestPayload {
 /// - A begin offset indicating where in the piece this block starts
 /// - The actual block data
 #[derive(Debug, PartialEq, Eq)]
-pub struct PiecePayload {
+pub struct Piece {
     meta_data: PiecePayloadMetaData,
     all_bytes: Bytes,
 }
@@ -664,7 +664,7 @@ struct PiecePayloadMetaData {
     begin: [u8; 4],
 }
 
-impl PeerMessagePayload for PiecePayload {
+impl PeerMessagePayload for Piece {
     fn as_bytes(&self) -> &[u8] {
         &self.all_bytes
     }
@@ -686,7 +686,7 @@ impl PeerMessagePayload for PiecePayload {
     }
 }
 
-impl PiecePayload {
+impl Piece {
     /// The size in bytes of the metadata portion (index + begin) of a piece message.
     pub const META_DATA_SIZE: usize = std::mem::size_of::<PiecePayloadMetaData>();
 
@@ -734,14 +734,14 @@ impl PiecePayload {
 /// ```rust
 /// use tokio::net::TcpStream;
 /// use bytes::BytesMut;
-/// use zung_torrent::peers::{PeerMessage, PeerMessageFrame, BitfieldPayload};
+/// use zung_torrent::peers::{PeerMessage, PeerMessageFrame, Bitfield};
 ///
 /// # async fn handle_peer(stream: TcpStream) -> anyhow::Result<()> {
 /// let mut stream = stream;
 /// let mut buf = BytesMut::with_capacity(4096);
 ///
 /// // Receive a BitField message
-/// let bitfield_msg = stream.recv_peer_message::<BitfieldPayload>(&mut buf).await?;
+/// let bitfield_msg = stream.recv_peer_message::<Bitfield>(&mut buf).await?;
 ///
 /// // Send an Interested message
 /// let interested_msg = PeerMessage::interested();
@@ -831,9 +831,7 @@ pub trait PeerMessageFrame: AsyncRead + AsyncWrite + Unpin {
     /// Returns an error if:
     /// - The stream is closed unexpectedly
     /// - The message is not a valid unchoke message
-    fn recv_unchoke_message(
-        &mut self,
-    ) -> impl Future<Output = Result<PeerMessage<UnchokePayload>>> {
+    fn recv_unchoke_message(&mut self) -> impl Future<Output = Result<PeerMessage<Unchoke>>> {
         async {
             let mut buf = [0; 5];
 
@@ -888,14 +886,14 @@ mod peer_messages_test {
 
     use super::*;
 
-    const CHOKE: PeerMessage<ChokePayload> = PeerMessage::choke();
-    const UNCHOKE: PeerMessage<UnchokePayload> = PeerMessage::unchoke();
-    const INTERESTED: PeerMessage<InterestedPayload> = PeerMessage::interested();
-    const NOT_INTERESTED: PeerMessage<NotInterestedPayload> = PeerMessage::not_interested();
-    const HAVE: PeerMessage<HavePayload> = PeerMessage::have(0);
-    const BITFIELD: PeerMessage<BitfieldPayload> = PeerMessage::bitfield(&[1, 2, 3, 4, 5, 6, 7, 8]);
-    const REQUEST: PeerMessage<RequestPayload> = PeerMessage::request(1, 2, 3);
-    static PIECE: LazyLock<PeerMessage<PiecePayload>> =
+    const CHOKE: PeerMessage<Choke> = PeerMessage::choke();
+    const UNCHOKE: PeerMessage<Unchoke> = PeerMessage::unchoke();
+    const INTERESTED: PeerMessage<Interested> = PeerMessage::interested();
+    const NOT_INTERESTED: PeerMessage<NotInterested> = PeerMessage::not_interested();
+    const HAVE: PeerMessage<Have> = PeerMessage::have(0);
+    const BITFIELD: PeerMessage<Bitfield> = PeerMessage::bitfield(&[1, 2, 3, 4, 5, 6, 7, 8]);
+    const REQUEST: PeerMessage<Request> = PeerMessage::request(1, 2, 3);
+    static PIECE: LazyLock<PeerMessage<Piece>> =
         LazyLock::new(|| PeerMessage::piece(1, 2, &[1, 2, 3, 4, 5]));
 
     #[test]
@@ -939,23 +937,23 @@ mod peer_messages_test {
 
     #[test]
     fn check_payload() {
-        assert_eq!(CHOKE.payload, ChokePayload);
-        assert_eq!(UNCHOKE.payload, UnchokePayload);
-        assert_eq!(INTERESTED.payload, InterestedPayload);
-        assert_eq!(NOT_INTERESTED.payload, NotInterestedPayload);
+        assert_eq!(CHOKE.payload, Choke);
+        assert_eq!(UNCHOKE.payload, Unchoke);
+        assert_eq!(INTERESTED.payload, Interested);
+        assert_eq!(NOT_INTERESTED.payload, NotInterested);
         assert_eq!(
             HAVE.payload,
-            HavePayload {
+            Have {
                 index: 0_u32.to_be_bytes()
             }
         );
         assert_eq!(
             BITFIELD.payload,
-            BitfieldPayload(Bytes::from_static(&[1, 2, 3, 4, 5, 6, 7, 8]))
+            Bitfield(Bytes::from_static(&[1, 2, 3, 4, 5, 6, 7, 8]))
         );
         assert_eq!(
             REQUEST.payload,
-            RequestPayload {
+            Request {
                 index: 1_u32.to_be_bytes(),
                 begin: 2_u32.to_be_bytes(),
                 length: 3_u32.to_be_bytes()
@@ -964,7 +962,7 @@ mod peer_messages_test {
 
         assert_eq!(
             PIECE.payload,
-            PiecePayload {
+            Piece {
                 meta_data: PiecePayloadMetaData {
                     index: 1_u32.to_be_bytes(),
                     begin: 2_u32.to_be_bytes(),

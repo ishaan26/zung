@@ -18,7 +18,7 @@ use meta_info::SortOrd;
 use std::path::PathBuf;
 use std::time::Duration;
 
-pub const TIMEOUT_DURATION: Duration = Duration::from_secs(50);
+pub const TIMEOUT_DURATION: Duration = Duration::from_secs(10);
 pub const CONCURRENCY_LIMIT: usize = 150;
 
 const URL_ENCODE_TABLE: [[u8; 3]; 256] = {
