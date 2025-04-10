@@ -89,22 +89,38 @@ use crate::{meta_info::InfoHashEncoded, TIMEOUT_DURATION};
 
 pub const BLOCK_MAX: u32 = 1024 * 16; /* 16 Kbi*/
 
+/// Represents the initial state of a peer before any connection has been established.
 #[derive(Debug)]
 pub struct Unconnected;
 
+/// Represents a peer that has successfully completed the BitTorrent handshake protocol.
+///
+/// Contains the TCP stream over which the handshake was performed and future peer messages
+/// will be exchanged.
 #[derive(Debug)]
 pub struct Handshaken {
     stream: TcpStream,
 }
 
+/// Represents a peer that has been unchoked and is ready for piece transfers.
+///
+/// Contains both the TCP stream for communication and the peer's bitfield which indicates
+/// which pieces they have available.
 #[derive(Debug)]
 pub struct Unchoked {
     stream: TcpStream,
     bitfield: PeerMessage<Bitfield>,
 }
 
+/// A trait representing a connected peer in the BitTorrent protocol.
+///
+/// This trait provides methods to access the underlying TCP stream for communication
+/// with the peer. Implementations of this trait should provide the necessary functionality
+/// to retrieve mutable and owned references to the TCP stream.
 pub trait ConnectedPeer {
+    /// Returns a mutable reference to the TCP stream.
     fn get_stream_mut(&mut self) -> &mut TcpStream;
+    /// Consumes the implementing type and returns the owned TCP stream.
     fn get_stream_owned(self) -> TcpStream;
 }
 
@@ -127,8 +143,15 @@ impl ConnectedPeer for Unchoked {
         self.stream
     }
 }
-
-/// Reprasents a single peer within the [`PeersList`]
+/// Represents a single peer within the [`PeersList`].
+///
+/// The `Peer` struct holds the address of the peer and its current state,
+/// which can be in various connection states (e.g., unconnected, handshaken, unchoked).
+///
+/// In the context of a torrent, a peer is a participant in the file-sharing network
+/// that can upload and download pieces of the file being shared. Each peer maintains
+/// a state that reflects its current interaction with the torrent, including which pieces
+/// it has available for sharing and whether it is currently able to send or receive data.
 #[derive(Debug)]
 pub struct Peer<T = Unconnected> {
     addr: SocketAddr,
@@ -144,12 +167,14 @@ where
         self.state.get_stream_mut()
     }
 
+    /// Get a owned reference to the TCP stream if the [`handshake`](Self::handshake) was successful.
     pub fn get_stream_owned(self) -> TcpStream {
         self.state.get_stream_owned()
     }
 }
 
 impl Peer<Unchoked> {
+    /// Get a reference to the [`Bitfield`] of the [`Peer`].
     pub fn get_bitfield(&self) -> &Bitfield {
         self.state.bitfield.payload()
     }
