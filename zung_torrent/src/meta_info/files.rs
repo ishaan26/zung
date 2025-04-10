@@ -15,7 +15,7 @@ const HIDDEN_ATTR: &str = "h";
 ///
 /// - `SingleFile`: Represents a single file with its length in bytes and an optional MD5 checksum.
 /// - `MultiFile`: Represents multiple files with a vector of data containing information about the
-///     file.
+///   file.
 ///
 /// As per the [The BitTorrent Protocol
 /// Specification](https://www.bittorrent.org/beps/bep_0003.html), in a torrent files there is
