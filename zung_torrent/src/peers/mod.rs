@@ -143,6 +143,7 @@ impl ConnectedPeer for Unchoked {
         self.stream
     }
 }
+
 /// Represents a single peer within the [`PeersList`].
 ///
 /// The `Peer` struct holds the address of the peer and its current state,
@@ -158,25 +159,106 @@ pub struct Peer<T = Unconnected> {
     state: T,
 }
 
-impl<T> Peer<T>
-where
-    T: ConnectedPeer,
-{
-    /// Get a mutable reference to the TCP stream if the [`handshake`](Self::handshake) was successful.
-    pub fn get_stream_mut(&mut self) -> &mut TcpStream {
-        self.state.get_stream_mut()
+impl Peer<Unconnected> {
+    /// Creates a new unconnected peer from a socket address.
+    ///
+    /// This constructor creates a peer in the initial unconnected state,
+    /// ready for handshaking with the BitTorrent protocol.
+    ///
+    /// # Note
+    ///
+    /// This type is also use to reprasent a single peer in the [`PeersList`] type which is
+    /// obtained from a [`TrackerResponse`](crate::trackers::TrackerResponse)
+    ///
+    /// # Arguments
+    ///
+    /// * `addr` - The socket address of the peer to connect to
+    ///
+    /// # Returns
+    ///
+    /// A new `Peer` instance in the unconnected state
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::net::{SocketAddr, Ipv4Addr};
+    /// use zung_torrent::peers::Peer;
+    ///
+    /// let addr = SocketAddr::from((Ipv4Addr::new(127, 0, 0, 1), 6881));
+    /// let peer = Peer::new(addr);
+    /// ```
+    pub fn new(addr: SocketAddr) -> Self {
+        Self {
+            addr,
+            state: Unconnected,
+        }
     }
 
-    /// Get a owned reference to the TCP stream if the [`handshake`](Self::handshake) was successful.
-    pub fn get_stream_owned(self) -> TcpStream {
-        self.state.get_stream_owned()
-    }
-}
+    /// Performs the BitTorrent handshake with the [`Peer`].
+    ///
+    /// This method establishes a TCP connection with the peer and exchanges handshake messages
+    /// according to the BitTorrent protocol. The handshake verifies that both parties are
+    /// interested in the same torrent by comparing `info hashes`.
+    ///
+    /// # Arguments
+    ///
+    /// * `info_hash` - The encoded info hash of the torrent to be shared
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Self>` - A new `Peer` instance with an established connection if successful
+    ///
+    /// # Errors
+    ///
+    /// This method will return an error if:
+    /// - The TCP connection cannot be established
+    /// - The handshake message cannot be sent or received
+    /// - The received handshake is invalid or doesn't match the expected format
+    /// - The peer doesn't respond within the timeout period
+    #[tracing::instrument(
+        name = "Handshake"
+        skip_all
+        fields(peer = %self.get_addr())
+    )]
+    pub async fn handshake(self, info_hash: InfoHashEncoded) -> Result<Peer<Handshaken>> {
+        let mut stream = TcpStream::connect(self.addr)
+            .timeout(TIMEOUT_DURATION)
+            .await??;
 
-impl Peer<Unchoked> {
-    /// Get a reference to the [`Bitfield`] of the [`Peer`].
-    pub fn get_bitfield(&self) -> &Bitfield {
-        self.state.bitfield.payload()
+        let handshake = Handshake::new(info_hash);
+
+        stream
+            .write_all(&handshake.as_bytes())
+            .timeout(TIMEOUT_DURATION)
+            .await??;
+
+        stream.flush().await?;
+
+        let mut buff = [0; Handshake::SIZE];
+        let read = stream
+            .read_exact(&mut buff)
+            .timeout(TIMEOUT_DURATION)
+            .await??;
+
+        // Check if the size of received message is the same as the sent.
+        ensure!(
+            read == std::mem::size_of::<Handshake>(),
+            "Handshake: required bytes not sent by the peer"
+        );
+
+        let recv_handshake = Handshake::from_bytes(buff);
+
+        // Validate the data received.
+        ensure!(recv_handshake.pstr() == Handshake::PROTOCOL_V1);
+        ensure!(recv_handshake.pstrlen() == Handshake::PROTOCOL_V1.len() as u8);
+        ensure!(recv_handshake.info_hash() == handshake.info_hash());
+
+        tracing::info!("Handshake complete");
+
+        Ok(Peer {
+            addr: self.addr,
+            state: Handshaken { stream },
+        })
     }
 }
 
@@ -247,72 +329,25 @@ impl Peer<Handshaken> {
     }
 }
 
-impl Peer<Unconnected> {
-    /// Performs the BitTorrent handshake with the [`Peer`].
-    ///
-    /// This method establishes a TCP connection with the peer and exchanges handshake messages
-    /// according to the BitTorrent protocol. The handshake verifies that both parties are
-    /// interested in the same torrent by comparing `info hashes`.
-    ///
-    /// # Arguments
-    ///
-    /// * `info_hash` - The encoded info hash of the torrent to be shared
-    ///
-    /// # Returns
-    ///
-    /// * `Result<Self>` - A new `Peer` instance with an established connection if successful
-    ///
-    /// # Errors
-    ///
-    /// This method will return an error if:
-    /// - The TCP connection cannot be established
-    /// - The handshake message cannot be sent or received
-    /// - The received handshake is invalid or doesn't match the expected format
-    /// - The peer doesn't respond within the timeout period
-    #[tracing::instrument(
-        name = "Handshake"
-        skip_all
-        fields(peer = %self.get_addr())
-    )]
-    pub async fn handshake(self, info_hash: InfoHashEncoded) -> Result<Peer<Handshaken>> {
-        let mut stream = TcpStream::connect(self.addr)
-            .timeout(TIMEOUT_DURATION)
-            .await??;
+impl Peer<Unchoked> {
+    /// Get a reference to the [`Bitfield`] of the [`Peer`].
+    pub fn get_bitfield(&self) -> &Bitfield {
+        self.state.bitfield.payload()
+    }
+}
 
-        let handshake = Handshake::new(info_hash);
+impl<T> Peer<T>
+where
+    T: ConnectedPeer,
+{
+    /// Get a mutable reference to the TCP stream if the [`handshake`](Self::handshake) was successful.
+    pub fn get_stream_mut(&mut self) -> &mut TcpStream {
+        self.state.get_stream_mut()
+    }
 
-        stream
-            .write_all(&handshake.as_bytes())
-            .timeout(TIMEOUT_DURATION)
-            .await??;
-
-        stream.flush().await?;
-
-        let mut buff = [0; Handshake::SIZE];
-        let read = stream
-            .read_exact(&mut buff)
-            .timeout(TIMEOUT_DURATION)
-            .await??;
-
-        // Check if the size of received message is the same as the sent.
-        ensure!(
-            read == std::mem::size_of::<Handshake>(),
-            "Handshake: required bytes not sent by the peer"
-        );
-
-        let recv_handshake = Handshake::from_bytes(buff);
-
-        // Validate the data received.
-        ensure!(recv_handshake.pstr() == Handshake::PROTOCOL_V1);
-        ensure!(recv_handshake.pstrlen() == Handshake::PROTOCOL_V1.len() as u8);
-        ensure!(recv_handshake.info_hash() == handshake.info_hash());
-
-        tracing::info!("Handshake complete");
-
-        Ok(Peer {
-            addr: self.addr,
-            state: Handshaken { stream },
-        })
+    /// Get a owned reference to the TCP stream if the [`handshake`](Self::handshake) was successful.
+    pub fn get_stream_owned(self) -> TcpStream {
+        self.state.get_stream_owned()
     }
 }
 
