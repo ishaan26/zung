@@ -1,27 +1,19 @@
-use std::{
-    net::SocketAddr,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
 };
 
 use dashmap::DashSet;
 use futures::{stream::FuturesUnordered, StreamExt};
-use tokio::{
-    net::TcpStream,
-    sync::{
-        mpsc::{self, Receiver},
-        Semaphore,
-    },
+use tokio::sync::{
+    mpsc::{self, Receiver},
+    Semaphore,
 };
-use tokio_util::time::FutureExt;
 
 use crate::{
     meta_info::InfoHashEncoded,
-    peers::{PeerMessage, PeerMessageFrame, Piece, BLOCK_MAX},
     trackers::{Tracker, TrackersList},
-    CONCURRENCY_LIMIT, TIMEOUT_DURATION,
+    CONCURRENCY_LIMIT,
 };
 
 use super::{DownloaderState, Uninitiated};
@@ -362,10 +354,13 @@ impl TrackerDownloader<Announced> {
                                 let addr = peer_unchoked.get_addr();
 
                                 // Download the peer
-                                match Self::get_piece(peer_unchoked.get_stream_owned(), addr).await
-                                {
-                                    Ok(_) => tracing::info!("Download complete"),
-                                    Err(e) => tracing::error!("Unable to download: {e}"),
+                                match peer_unchoked.download_piece().await {
+                                    Ok(d) => {
+                                        tracing::info!(peer = %addr, "Download complete for piece_index: {}", d.get_downloaded_piece().index())
+                                    }
+                                    Err(e) => {
+                                        tracing::error!(peer= %addr, "Unable to download: {e}")
+                                    }
                                 }
 
                                 Ok::<(), anyhow::Error>(())
@@ -385,7 +380,7 @@ impl TrackerDownloader<Announced> {
                         tracing::warn!("Peer download task failed: {e}");
                     }
                 }
-                Err(e) => tracing::error!("Peer task panicked: {e}"),
+                Err(e) => tracing::error!("Peer download task panicked: {e}"),
             }
         }
 
@@ -394,38 +389,6 @@ impl TrackerDownloader<Announced> {
             .store(peers_buff.len(), Ordering::Relaxed);
 
         self.update_state(Downloaded)
-    }
-
-    #[tracing::instrument(
-        name = "Download::peer_messages"
-        skip(stream)
-    )]
-    #[inline]
-    async fn get_piece(mut stream: TcpStream, peer: SocketAddr) -> anyhow::Result<()> {
-        // TODO: Now comes the hard part... send request for each piece in the torrent file
-        let mut buf = bytes::BytesMut::with_capacity(BLOCK_MAX as usize);
-
-        tracing::debug!("Sending request message");
-
-        stream
-            .send_peer_message(PeerMessage::request(0, 0, BLOCK_MAX))
-            .timeout(TIMEOUT_DURATION)
-            .await??;
-
-        tracing::debug!("Request Message Sent");
-
-        tracing::debug!("Seeking piece message");
-
-        let piece = stream
-            .recv_peer_message::<Piece>(&mut buf)
-            .timeout(TIMEOUT_DURATION)
-            .await??;
-
-        dbg!(piece.payload().block().len());
-
-        tracing::debug!("Piece message received");
-
-        Ok(())
     }
 }
 

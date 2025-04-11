@@ -60,7 +60,7 @@
 //! }
 //! ```
 //!
-//! Please refer the documentation of [`PeerMessage`], [`PeerMessageExt`] and [`PeerMessageFrame`]
+//! Please refer the documentation of [`PeerMessage`] and [`PeerMessageExt`]
 //! for more information on the usage of peer messages.
 
 mod handshake;
@@ -81,7 +81,7 @@ use std::{
     net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
 };
 
-use anyhow::{bail, ensure, Result};
+use anyhow::{anyhow, bail, ensure, Result};
 use rayon::{iter::ParallelIterator, slice::ParallelSlice};
 use serde::{de::Visitor, Deserialize, Serialize, Serializer};
 
@@ -112,6 +112,11 @@ pub struct Unchoked {
     bitfield: PeerMessage<Bitfield>,
 }
 
+pub struct Downloading {
+    stream: TcpStream,
+    piece: PeerMessage<Piece>,
+}
+
 /// A trait representing a connected peer in the BitTorrent protocol.
 ///
 /// This trait provides methods to access the underlying TCP stream for communication
@@ -135,6 +140,16 @@ impl ConnectedPeer for Handshaken {
 }
 
 impl ConnectedPeer for Unchoked {
+    fn get_stream_mut(&mut self) -> &mut TcpStream {
+        &mut self.stream
+    }
+
+    fn get_stream_owned(self) -> TcpStream {
+        self.stream
+    }
+}
+
+impl ConnectedPeer for Downloading {
     fn get_stream_mut(&mut self) -> &mut TcpStream {
         &mut self.stream
     }
@@ -288,14 +303,13 @@ impl Peer<Handshaken> {
         skip_all
         fields(peer = %self.get_addr())
     )]
-    pub async fn unchoke(self) -> anyhow::Result<Peer<Unchoked>> {
+    pub async fn unchoke(mut self) -> anyhow::Result<Peer<Unchoked>> {
         let mut buf = BytesMut::with_capacity(BLOCK_MAX as usize);
         let addr = self.addr;
-        let mut stream = self.get_stream_owned();
 
         tracing::debug!("Seeking bitfield message");
 
-        let bitfield = stream
+        let bitfield = self
             .recv_peer_message::<Bitfield>(&mut buf)
             .timeout(TIMEOUT_DURATION)
             .await??;
@@ -306,8 +320,7 @@ impl Peer<Handshaken> {
 
         tracing::debug!("Sending unchoke message");
 
-        stream
-            .send_peer_message(PeerMessage::interested())
+        self.send_peer_message(PeerMessage::interested())
             .timeout(TIMEOUT_DURATION)
             .await??;
 
@@ -315,8 +328,7 @@ impl Peer<Handshaken> {
 
         tracing::debug!("Seeking unchoke message");
 
-        stream
-            .recv_unchoke_message()
+        self.recv_unchoke_message()
             .timeout(TIMEOUT_DURATION)
             .await??;
 
@@ -324,15 +336,62 @@ impl Peer<Handshaken> {
 
         Ok(Peer {
             addr,
-            state: Unchoked { stream, bitfield },
+            state: Unchoked {
+                stream: self.get_stream_owned(),
+                bitfield,
+            },
         })
     }
 }
 
 impl Peer<Unchoked> {
-    /// Get a reference to the [`Bitfield`] of the [`Peer`].
+    #[tracing::instrument(
+        name = "GetPiece"
+        skip_all
+        fields(peer = %self.get_addr())
+    )]
+    #[inline]
+    pub async fn download_piece(mut self) -> anyhow::Result<Peer<Downloading>> {
+        // NOTE: Now comes the hard part... Send request for each piece in the torrent file.
+        // TODO: Implement this bitch.
+
+        let mut buf = bytes::BytesMut::with_capacity(BLOCK_MAX as usize);
+
+        tracing::debug!("Sending request message");
+
+        self.send_peer_message(PeerMessage::request(0, 0, BLOCK_MAX))
+            .timeout(TIMEOUT_DURATION)
+            .await??;
+
+        tracing::debug!("Request Message Sent");
+
+        tracing::debug!("Seeking piece message");
+
+        let piece = self
+            .recv_peer_message::<Piece>(&mut buf)
+            .timeout(TIMEOUT_DURATION)
+            .await??;
+
+        tracing::debug!("Piece message received");
+
+        Ok(Peer {
+            addr: self.addr,
+            state: Downloading {
+                stream: self.get_stream_owned(),
+                piece,
+            },
+        })
+    }
+
+    /// Get a reference to the [`Bitfield`] of the unchoked [`Peer`].
     pub fn get_bitfield(&self) -> &Bitfield {
         self.state.bitfield.payload()
+    }
+}
+
+impl Peer<Downloading> {
+    pub fn get_downloaded_piece(&self) -> &Piece {
+        self.state.piece.payload()
     }
 }
 
@@ -348,6 +407,117 @@ where
     /// Get a owned reference to the TCP stream if the [`handshake`](Self::handshake) was successful.
     pub fn get_stream_owned(self) -> TcpStream {
         self.state.get_stream_owned()
+    }
+
+    /// Reads and parses a peer message from the [`Peer`] stream.
+    ///
+    /// This method reads bytes from the stream into the provided buffer until a complete peer
+    /// message is received.     
+    ///
+    /// # Returns
+    ///
+    /// A `Future` that resolves to a `Result<PeerMessage<T>>` where:
+    /// - `T` is the type of payload expected in the message
+    /// - The message is parsed according to the BitTorrent peer protocol specification
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The stream is closed unexpectedly
+    /// - The message length is invalid
+    /// - The message tag doesn't match the expected type
+    /// - The payload cannot be parsed
+    pub async fn recv_peer_message<P>(&mut self, buf: &mut BytesMut) -> Result<PeerMessage<P>>
+    where
+        P: PeerMessagePayload,
+    {
+        {
+            let stream = self.get_stream_mut();
+
+            loop {
+                let read = stream.read_buf(buf).await?;
+
+                if read == 0 {
+                    continue;
+                }
+
+                if buf.len() < 4 {
+                    tracing::trace!("Peer sent less than 4 bytes. RETRYING");
+                    continue;
+                }
+
+                let len = u32::from_be_bytes(buf[0..4].try_into()?);
+
+                if len as usize > buf.len() {
+                    tracing::trace!(
+                        "Peer sent insuffecient data, expected: {len}, recv: {}. RETRYING",
+                        buf.len()
+                    );
+
+                    continue;
+                }
+
+                ensure!(len as usize <= (buf.len() - 4));
+
+                let tag = PeerMessagesTag::try_from(buf[4]).map_err(|e| anyhow!(e))?;
+
+                ensure!(tag == P::message_tag());
+
+                let payload = P::from_bytes(&buf[5..(5 + len - 1) as usize])?;
+
+                buf.truncate(len as usize + 4);
+
+                let message: PeerMessage<P> = PeerMessage::new(len, tag, payload);
+
+                break Ok(message);
+            }
+        }
+    }
+
+    /// Receives an [`unchoke`](PeerMessage::unchoke) message from the stream.
+    ///
+    /// This is a specialized method for receiving unchoke messages that is more efficient than
+    /// `recv_peer_message` since unchoke messages have a fixed size of 5 bytes (4 bytes length + 1 byte tag).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The stream is closed unexpectedly
+    /// - The message is not a valid unchoke message
+    pub async fn recv_unchoke_message(&mut self) -> Result<PeerMessage<Unchoke>> {
+        let mut buf = [0; 5];
+
+        self.get_stream_mut().read_exact(&mut buf).await?;
+
+        PeerMessage::from_bytes(&buf)
+    }
+
+    /// Sends a peer message over the stream.
+    ///
+    /// This method serializes the message according to the BitTorrent peer protocol and writes it
+    /// to the stream.
+    ///
+    /// # Returns
+    ///
+    /// A `Future` that resolves to a `Result<()>` indicating whether the message was sent successfully.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The stream is closed unexpectedly
+    /// - The message cannot be written completely
+    pub async fn send_peer_message<'a, P>(&'a mut self, message: PeerMessage<P>) -> Result<usize>
+    where
+        P: 'a + PeerMessagePayload + Send,
+    {
+        let stream = self.get_stream_mut();
+        let written = stream.write(&message.to_bytes()).await?;
+
+        stream.flush().await?;
+
+        ensure!(message.size() == written);
+
+        Ok(written)
     }
 }
 
