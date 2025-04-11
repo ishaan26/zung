@@ -112,6 +112,11 @@ pub struct Unchoked {
     bitfield: PeerMessage<Bitfield>,
 }
 
+/// Represents a peer that is currently downloading pieces of a torrent.
+///
+/// This struct contains the TCP stream for communication with the peer
+/// and the piece information that indicates which piece is currently being downloaded.
+#[derive(Debug)]
 pub struct Downloading {
     stream: TcpStream,
     piece: PeerMessage<Piece>,
@@ -277,6 +282,7 @@ impl Peer<Unconnected> {
     }
 }
 
+/// Obtained from [`Peer::handshake`]
 impl Peer<Handshaken> {
     /// Transitions a handshaken peer to the unchoked state.
     ///
@@ -344,7 +350,13 @@ impl Peer<Handshaken> {
     }
 }
 
+/// Obtained from [`Peer::unchoke`]
 impl Peer<Unchoked> {
+    /// Downloads a piece of data from the peer.
+    ///
+    /// Sends a request to the peer for a specific piece of data and waits for
+    /// the response. Upon receiving the piece, it updates the peer's state to
+    /// reflect that it is now in the downloading state.
     #[tracing::instrument(
         name = "GetPiece"
         skip_all
@@ -389,12 +401,15 @@ impl Peer<Unchoked> {
     }
 }
 
+/// Obtained from [`Peer::download_piece`]
 impl Peer<Downloading> {
+    /// Get a reference to the [`Piece`] of the downloading [`Peer`].
     pub fn get_downloaded_piece(&self) -> &Piece {
         self.state.piece.payload()
     }
 }
 
+/// Methods for a [`Peer`] that is atleast [handshaken](Peer::handshake)
 impl<T> Peer<T>
 where
     T: ConnectedPeer,
@@ -413,12 +428,6 @@ where
     ///
     /// This method reads bytes from the stream into the provided buffer until a complete peer
     /// message is received.     
-    ///
-    /// # Returns
-    ///
-    /// A `Future` that resolves to a `Result<PeerMessage<T>>` where:
-    /// - `T` is the type of payload expected in the message
-    /// - The message is parsed according to the BitTorrent peer protocol specification
     ///
     /// # Errors
     ///
