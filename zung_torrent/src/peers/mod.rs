@@ -32,31 +32,26 @@
 //! [`TrackerResponse`](crate::trackers::TrackerResponse) which is obtained by
 //! [announceing](crate::trackers::Tracker::announce) to a [`Tracker`](crate::trackers::Tracker).
 //!
-//! ## Handshake with a peer
+//! ```rust
+//! use std::net::SocketAddr;
+//! use zung_torrent::{
+//!     peers::{Peer, Unconnected},
+//!     meta_info::InfoHashEncoded,
+//! };
 //!
-//! Once a peer is obtained, the next step in the bittorrent protocol is to perform a
-//! [`handshake`](Peer::handshake) with each peer.
-//!
-//! ```ignore
-//! # use zung_torrent::*;
-//! let connected_peer = peer.handshake(info_hash).await?;
-//! ```
-//!
-//! The above method returns a new [`Peer`] type which would contain a [`TcpStream`] if the
-//! handshake was successful.
-//!
-//! Once the handshake is successful, next step is the back and forth of the [`PeerMessage`]s over
-//! the handshake [`TcpStream`].
-//!
-//! ## Sending and receiving peer messages
-//!
-//! ```ignore
-//! # use zung_torrent::*;
-//! // if stream is `Some`, that means handshake was successful.
-//!
-//! if let Some(stream) = peer.get_stream_mut() {
-//!     stream.recv_peer_message::<BitfieldPayload>();
-//!     stream.send_peer_message(PeerMessage::interested());
+//! async fn connect_to_peer(peer: Peer<Unconnected>, info_hash: InfoHashEncoded) -> anyhow::Result<()> {
+//!     // Connect to the peer with a complete handshake -> unchoke -> download flow
+//!     let downloading_peer = peer
+//!         .handshake(info_hash).await?  // Establish connection and perform handshake
+//!         .unchoke().await?             // Send interested message and wait for unchoke
+//!         .download_piece().await?;     // Request and download a piece
+//!     
+//!     // Access the downloaded piece data
+//!     let piece = downloading_peer.get_downloaded_piece();
+//!     println!("Downloaded piece index: {}", piece.index());
+//!     println!("Downloaded piece data length: {}", piece.block().len());
+//!     
+//!     Ok(())
 //! }
 //! ```
 //!
