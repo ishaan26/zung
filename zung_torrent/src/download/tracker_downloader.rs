@@ -331,12 +331,12 @@ impl TrackerDownloader<Announced> {
                             let semaphore = semaphore.clone();
 
                             tracing::debug!(
-                            peer = %peer.get_addr(),
+                            peer = %peer.socket_addr(),
                             "Unique peer found"
                             );
 
                             tracing::info!(
-                                peer= %peer.get_addr(),
+                                peer= %peer.socket_addr(),
                                 "Initiating Handshake"
                             );
 
@@ -351,12 +351,16 @@ impl TrackerDownloader<Announced> {
 
                                 counter.fetch_add(1, Ordering::SeqCst);
 
-                                let addr = peer_unchoked.get_addr();
+                                let addr = peer_unchoked.socket_addr();
 
                                 // Download the peer
                                 match peer_unchoked.download_piece().await {
                                     Ok(d) => {
-                                        tracing::info!(peer = %addr, "Download complete for piece_index: {}", d.get_downloaded_piece().index())
+                                        tracing::info!(
+                                            peer = %addr,
+                                            "Download complete for piece_index: {}",
+                                            d.get_downloaded_piece().index()
+                                        )
                                     }
                                     Err(e) => {
                                         tracing::error!(peer= %addr, "Unable to download: {e}")

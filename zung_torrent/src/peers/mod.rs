@@ -82,8 +82,6 @@ use serde::{de::Visitor, Deserialize, Serialize, Serializer};
 
 use crate::{meta_info::InfoHashEncoded, TIMEOUT_DURATION};
 
-pub const BLOCK_MAX: u32 = 1024 * 16; /* 16 Kbi*/
-
 /// Represents the initial state of a peer before any connection has been established.
 #[derive(Debug)]
 pub struct Unconnected;
@@ -171,6 +169,7 @@ impl ConnectedPeer for Downloading {
 #[derive(Debug)]
 pub struct Peer<T = Unconnected> {
     addr: SocketAddr,
+    block_size: u32,
     state: T,
 }
 
@@ -202,9 +201,10 @@ impl Peer<Unconnected> {
     /// let addr = SocketAddr::from((Ipv4Addr::new(127, 0, 0, 1), 6881));
     /// let peer = Peer::new(addr);
     /// ```
-    pub fn new(addr: SocketAddr) -> Self {
+    pub const fn new(addr: SocketAddr) -> Self {
         Self {
             addr,
+            block_size: 1024 * 16,
             state: Unconnected,
         }
     }
@@ -233,7 +233,7 @@ impl Peer<Unconnected> {
     #[tracing::instrument(
         name = "Handshake"
         skip_all
-        fields(peer = %self.get_addr())
+        fields(peer = %self.socket_addr())
     )]
     pub async fn handshake(self, info_hash: InfoHashEncoded) -> Result<Peer<Handshaken>> {
         let mut stream = TcpStream::connect(self.addr)
@@ -272,6 +272,7 @@ impl Peer<Unconnected> {
 
         Ok(Peer {
             addr: self.addr,
+            block_size: self.block_size,
             state: Handshaken { stream },
         })
     }
@@ -302,22 +303,19 @@ impl Peer<Handshaken> {
     #[tracing::instrument(
         name = "Unchoke"
         skip_all
-        fields(peer = %self.get_addr())
+        fields(peer = %self.socket_addr())
     )]
     pub async fn unchoke(mut self) -> anyhow::Result<Peer<Unchoked>> {
-        let mut buf = BytesMut::with_capacity(BLOCK_MAX as usize);
         let addr = self.addr;
 
         tracing::debug!("Seeking bitfield message");
 
         let bitfield = self
-            .recv_peer_message::<Bitfield>(&mut buf)
+            .recv_peer_message::<Bitfield>()
             .timeout(TIMEOUT_DURATION)
             .await??;
 
         tracing::debug!("Bitfield message received");
-
-        buf.clear();
 
         tracing::debug!("Sending unchoke message");
 
@@ -329,19 +327,20 @@ impl Peer<Handshaken> {
 
         tracing::debug!("Seeking unchoke message");
 
-        self.recv_unchoke_message()
+        self.recv_peer_message::<Unchoke>()
             .timeout(TIMEOUT_DURATION)
             .await??;
 
         tracing::debug!("Unchoke message received");
 
-        Ok(Peer {
+        Ok(Peer::with_state(
             addr,
-            state: Unchoked {
-                stream: self.get_stream_owned(),
+            self.block_size,
+            Unchoked {
+                stream: self.stream_owned(),
                 bitfield,
             },
-        })
+        ))
     }
 }
 
@@ -355,18 +354,18 @@ impl Peer<Unchoked> {
     #[tracing::instrument(
         name = "GetPiece"
         skip_all
-        fields(peer = %self.get_addr())
+        fields(peer = %self.socket_addr())
     )]
     #[inline]
     pub async fn download_piece(mut self) -> anyhow::Result<Peer<Downloading>> {
         // NOTE: Now comes the hard part... Send request for each piece in the torrent file.
         // TODO: Implement this bitch.
 
-        let mut buf = bytes::BytesMut::with_capacity(BLOCK_MAX as usize);
+        let block_size = self.block_size();
 
         tracing::debug!("Sending request message");
 
-        self.send_peer_message(PeerMessage::request(0, 0, BLOCK_MAX))
+        self.send_peer_message(PeerMessage::request(0, 0, block_size))
             .timeout(TIMEOUT_DURATION)
             .await??;
 
@@ -375,19 +374,20 @@ impl Peer<Unchoked> {
         tracing::debug!("Seeking piece message");
 
         let piece = self
-            .recv_peer_message::<Piece>(&mut buf)
+            .recv_peer_message::<Piece>()
             .timeout(TIMEOUT_DURATION)
             .await??;
 
         tracing::debug!("Piece message received");
 
-        Ok(Peer {
-            addr: self.addr,
-            state: Downloading {
-                stream: self.get_stream_owned(),
+        Ok(Peer::with_state(
+            self.addr,
+            self.block_size,
+            Downloading {
+                stream: self.stream_owned(),
                 piece,
             },
-        })
+        ))
     }
 
     /// Get a reference to the [`Bitfield`] of the unchoked [`Peer`].
@@ -410,13 +410,25 @@ where
     T: ConnectedPeer,
 {
     /// Get a mutable reference to the TCP stream if the [`handshake`](Self::handshake) was successful.
-    pub fn get_stream_mut(&mut self) -> &mut TcpStream {
+    pub fn stream_as_mut(&mut self) -> &mut TcpStream {
         self.state.get_stream_mut()
     }
 
     /// Get a owned reference to the TCP stream if the [`handshake`](Self::handshake) was successful.
-    pub fn get_stream_owned(self) -> TcpStream {
+    pub fn stream_owned(self) -> TcpStream {
         self.state.get_stream_owned()
+    }
+
+    /// Creates a new buffer with capacity matching the peer's block size.
+    ///
+    /// This method allocates a `BytesMut` buffer sized appropriately for receiving
+    /// messages from this peer based on the current block size setting.
+    ///
+    /// # Returns
+    ///
+    /// A new `BytesMut` buffer with capacity equal to the peer's block size.
+    pub fn get_buffer(&self) -> BytesMut {
+        BytesMut::with_capacity(self.block_size() as usize)
     }
 
     /// Reads and parses a peer message from the [`Peer`] stream.
@@ -431,69 +443,65 @@ where
     /// - The message length is invalid
     /// - The message tag doesn't match the expected type
     /// - The payload cannot be parsed
-    pub async fn recv_peer_message<P>(&mut self, buf: &mut BytesMut) -> Result<PeerMessage<P>>
+    pub async fn recv_peer_message<P>(&mut self) -> Result<PeerMessage<P>>
     where
         P: PeerMessagePayload,
     {
+        // Optimization for messages that do not have any payload.
+        if let PeerMessagesTag::Choke
+        | PeerMessagesTag::Unchoke
+        | PeerMessagesTag::Interested
+        | PeerMessagesTag::NotInterested = P::message_tag()
         {
-            let stream = self.get_stream_mut();
+            let mut buf = [0; 5];
 
-            loop {
-                let read = stream.read_buf(buf).await?;
+            self.stream_as_mut().read_exact(&mut buf).await?;
 
-                if read == 0 {
-                    continue;
-                }
+            return PeerMessage::from_bytes(&buf);
+        };
 
-                if buf.len() < 4 {
-                    tracing::trace!("Peer sent less than 4 bytes. RETRYING");
-                    continue;
-                }
+        // for messages that have unknown length payload
 
-                let len = u32::from_be_bytes(buf[0..4].try_into()?);
+        let mut buf = self.get_buffer();
+        let stream = self.stream_as_mut();
 
-                if len as usize > buf.len() {
-                    tracing::trace!(
-                        "Peer sent insuffecient data, expected: {len}, recv: {}. RETRYING",
-                        buf.len()
-                    );
+        loop {
+            let read = stream.read_buf(&mut buf).await?;
 
-                    continue;
-                }
-
-                ensure!(len as usize <= (buf.len() - 4));
-
-                let tag = PeerMessagesTag::try_from(buf[4]).map_err(|e| anyhow!(e))?;
-
-                ensure!(tag == P::message_tag());
-
-                let payload = P::from_bytes(&buf[5..(5 + len - 1) as usize])?;
-
-                buf.truncate(len as usize + 4);
-
-                let message: PeerMessage<P> = PeerMessage::new(len, tag, payload);
-
-                break Ok(message);
+            if read == 0 {
+                continue;
             }
+
+            if buf.len() < 4 {
+                tracing::trace!("Peer sent less than 4 bytes. RETRYING");
+                continue;
+            }
+
+            let len = u32::from_be_bytes(buf[0..4].try_into()?);
+
+            if len as usize > buf.len() {
+                tracing::trace!(
+                    "Peer sent insuffecient data, expected: {len}, recv: {}. RETRYING",
+                    buf.len()
+                );
+
+                continue;
+            }
+
+            ensure!(len as usize <= (buf.len() - 4));
+
+            let tag = PeerMessagesTag::try_from(buf[4]).map_err(|e| anyhow!(e))?;
+
+            ensure!(tag == P::message_tag());
+
+            let payload = P::from_bytes(&buf[5..(5 + len - 1) as usize])?;
+
+            buf.truncate(len as usize + 4);
+
+            let message: PeerMessage<P> = PeerMessage::new(len, tag, payload);
+
+            break Ok(message);
         }
-    }
-
-    /// Receives an [`unchoke`](PeerMessage::unchoke) message from the stream.
-    ///
-    /// This is a specialized method for receiving unchoke messages that is more efficient than
-    /// `recv_peer_message` since unchoke messages have a fixed size of 5 bytes (4 bytes length + 1 byte tag).
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - The stream is closed unexpectedly
-    /// - The message is not a valid unchoke message
-    pub async fn recv_unchoke_message(&mut self) -> Result<PeerMessage<Unchoke>> {
-        let mut buf = [0; 5];
-
-        self.get_stream_mut().read_exact(&mut buf).await?;
-
-        PeerMessage::from_bytes(&buf)
     }
 
     /// Sends a peer message over the stream.
@@ -514,7 +522,7 @@ where
     where
         P: 'a + PeerMessagePayload + Send,
     {
-        let stream = self.get_stream_mut();
+        let stream = self.stream_as_mut();
         let written = stream.write(&message.to_bytes()).await?;
 
         stream.flush().await?;
@@ -527,8 +535,77 @@ where
 
 impl<T> Peer<T> {
     /// Returns the [`SocketAddr`] of the Peer.
-    pub const fn get_addr(&self) -> SocketAddr {
+    #[inline]
+    pub const fn socket_addr(&self) -> SocketAddr {
         self.addr
+    }
+
+    /// Returns the current block size used for piece requests and data transfers.
+    ///
+    /// The block size determines how much data is requested in a single request message
+    /// and affects the buffer sizes used for communication with the peer.
+    ///
+    /// # Returns
+    ///
+    /// The current block size in bytes as a `u32`.
+    #[inline]
+    pub const fn block_size(&self) -> u32 {
+        self.block_size
+    }
+
+    /// Sets a custom block size for piece requests and data transfers.
+    ///
+    /// The block size determines how much data is requested in a single request message
+    /// and affects the buffer sizes used for communication with the peer. Adjusting this
+    /// value can optimize transfer speeds based on network conditions.
+    ///
+    /// # Note
+    ///
+    /// **The default `block size` is set to 16KB i.e., 16384 bytes**
+    ///
+    /// # Returns
+    ///
+    /// The peer with the updated block size
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use std::net::{SocketAddr, Ipv4Addr};
+    /// # use zung_torrent::peers::Peer;
+    /// # use zung_torrent::meta_info::InfoHashEncoded;
+    /// # async fn example(info_hash: InfoHashEncoded) -> anyhow::Result<()> {
+    /// # let addr = SocketAddr::from((Ipv4Addr::new(127, 0, 0, 1), 6881));
+    /// # let peer = Peer::new(addr);
+    /// peer
+    ///     .with_block_size(32 * 1024) // Set 32KB block size
+    ///     .handshake(info_hash).await?
+    ///     .unchoke().await?
+    ///     .download_piece().await?;
+    ///
+    /// // can be inserted anywhere in the chain
+    /// # let peer = Peer::new(addr);
+    ///
+    /// peer
+    ///     .handshake(info_hash).await?
+    ///     .unchoke().await?
+    ///     .with_block_size(32 * 1024) // Set 32KB block size
+    ///     .download_piece().await?;
+    ///     
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub const fn with_block_size(mut self, block_size: u32) -> Self {
+        self.block_size = block_size;
+        self
+    }
+
+    #[inline]
+    const fn with_state(addr: SocketAddr, block_size: u32, state: T) -> Peer<T> {
+        Peer {
+            addr,
+            block_size,
+            state,
+        }
     }
 
     /// Get ip addr octests
@@ -552,6 +629,7 @@ impl Clone for Peer<Unconnected> {
     fn clone(&self) -> Self {
         Self {
             addr: self.addr,
+            block_size: self.block_size,
             state: Unconnected,
         }
     }
@@ -597,19 +675,13 @@ impl<T> Eq for Peer<T> {}
 
 impl From<SocketAddrV4> for Peer<Unconnected> {
     fn from(value: SocketAddrV4) -> Self {
-        Self {
-            addr: SocketAddr::from(value),
-            state: Unconnected,
-        }
+        Self::new(SocketAddr::from(value))
     }
 }
 
 impl From<SocketAddrV6> for Peer<Unconnected> {
     fn from(value: SocketAddrV6) -> Self {
-        Self {
-            addr: SocketAddr::from(value),
-            state: Unconnected,
-        }
+        Self::new(SocketAddr::from(value))
     }
 }
 
