@@ -477,6 +477,8 @@ where
                 continue;
             }
 
+            // TODO: this is the same code of PeerMessage::from_bytes so as to avoid double parsing
+            // of the len. Think how can this be just the from_bytes function.
             let len = u32::from_be_bytes(buf[0..4].try_into()?);
 
             if len as usize > buf.len() {
@@ -793,8 +795,7 @@ impl PeersList {
     /// Returns an iterator over all peers in the list.
     ///
     /// The iterator will first yield all IPv4 peers, followed by all IPv6 peers.
-    /// If either type of peers is not present, the iterator will seamlessly move
-    /// to the next available type.
+    /// If either type of peers is not present, the iterator will seamlessly move to the next available type.
     ///
     /// # Returns
     ///
