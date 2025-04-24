@@ -14,7 +14,6 @@ default = ["client"]
 client = ["dep:colored", "dep:human_bytes"]
 
 [dependencies]
-
 colored = { version = "3.0.0", optional = true }
 anyhow = "1.0.97"
 bytes = { version = "1.10.1", features = ["serde"] }
