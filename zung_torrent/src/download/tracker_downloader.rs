@@ -295,7 +295,7 @@ impl TrackerDownloader<Announced> {
 
         let mut handles = FuturesUnordered::new();
 
-        // Await on the Announced joinhandles asyncly and if successfull, handshake with the peers
+        // Await on the Announced joinhandles asyncly and if successful, handshake with the peers
         // inside the TrackerResponse.
         while let Some(announced_tracker) = self.state.stream.recv().await {
             let guraded_response = announced_tracker.get_response_guarded();
@@ -325,7 +325,6 @@ impl TrackerDownloader<Announced> {
                     for peer in list.iter() {
                         // If the unique peer is inserted in the hashset, spawn a thread to
                         // handshake with it.
-
                         if peers_buff.insert(peer.clone()) {
                             let peer = peer.clone(); // This performs an Arc Clone
                             let semaphore = semaphore.clone();
