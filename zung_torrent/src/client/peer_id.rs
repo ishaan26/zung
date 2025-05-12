@@ -35,7 +35,7 @@ use crate::URL_ENCODE_TABLE;
 /// - `start`: A 1-byte field, typically a dash (`-`), indicating the start of the ID.
 /// - `uid`: A 2-byte field for a unique identifier for the client. Here it is set as `"ZG"`.
 /// - `pid`: A 4-byte field representing the process ID (PID), used to distinguish instances on the
-///    same machine.
+///   same machine.
 /// - `time`: A 12-byte field capturing the system time, ensuring further uniqueness.
 /// - `end`: A 1-byte field, typically a dash (`-`), marking the end of the ID.
 #[repr(C)]
