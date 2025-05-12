@@ -4,6 +4,12 @@ use zung_mini::MiniArgs;
 use zung_parsers::ParserArgs;
 use zung_torrent::TorrentArgs;
 
+#[cfg(debug_assertions)]
+const TRACE_LEVEL: &str = "zung=trace";
+
+#[cfg(not(debug_assertions))]
+const TRACE_LEVEL: &str = "zung=info";
+
 #[derive(Parser)]
 #[command(author, version, about, long_about = None, styles=get_styles())] // Read from `Cargo.toml`
 struct Cli {
@@ -25,12 +31,16 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    _set_subscribers_n();
+
     let cli = Cli::parse();
 
     match cli.commands {
         Commands::Mini(mini_args) => mini_args.run(),
         Commands::Parsers(bencode_args) => bencode_args.run()?,
-        Commands::Torrent(torrent_args) => torrent_args.run().await?,
+        Commands::Torrent(torrent_args) => {
+            torrent_args.run().await?;
+        }
     }
 
     Ok(())
@@ -71,6 +81,39 @@ fn get_styles() -> clap::builder::Styles {
         .placeholder(
             anstyle::Style::new().fg_color(Some(anstyle::Color::Ansi(anstyle::AnsiColor::Yellow))),
         )
+}
+
+// For tokio console.
+fn _set_subscribers_t() {
+    use tracing_subscriber::prelude::*;
+
+    // spawn the console server in the background,
+    // returning a `Layer`:
+    let console_layer = console_subscriber::spawn();
+
+    // build a `Subscriber` by combining layers with a
+    // `tracing_subscriber::Registry`:
+    tracing_subscriber::registry()
+        .with(console_layer)
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_level(true)
+                .without_time(),
+        )
+        .init();
+}
+
+// For stdout
+fn _set_subscribers_n() {
+    tracing_subscriber::fmt()
+        // all spans/events with a level higher than TRACE (e.g, info, warn, etc.)
+        // will be written to stdout.
+        .with_env_filter(TRACE_LEVEL)
+        // .without_time()
+        .with_target(false)
+        .with_line_number(false)
+        .compact()
+        .init(); // sets this to be the default, global subscriber for this application.
 }
 
 #[test]

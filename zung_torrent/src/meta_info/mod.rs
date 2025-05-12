@@ -39,6 +39,7 @@ use zung_parsers::bencode;
 
 pub use files::{FileAttr, FileTree, Files, SortOrd};
 pub use info::{Info, InfoHash, InfoHashEncoded};
+pub use pieces::{Piece, PiecesList};
 
 use serde::{Deserialize, Serialize};
 
@@ -113,6 +114,10 @@ impl MetaInfo {
     /// Returns the `title` key of the torrent file (if any)
     pub fn title(&self) -> Option<&String> {
         self.title.as_ref()
+    }
+
+    pub fn pieces(&self) -> &PiecesList {
+        &self.info.pieces
     }
 
     /// Returns the number of piece sha1 hashes contained in a torrent file.

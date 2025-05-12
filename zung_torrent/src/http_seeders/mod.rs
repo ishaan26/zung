@@ -1,37 +1,46 @@
+//! Provides functionality to interact with HTTP seeders (also known as "web seeds").
+//!
+//! HTTP seeders (also known as "web seeds") in BitTorrent are alternative sources for downloading
+//! torrent data directly from web servers using HTTP/HTTPS, rather than from P2P peers. They were
+//! introduced to ensure availability of torrents even when there are few or no regular peers.
+//!
+//! HTTP seeding comes in several variations, each suited to different use cases. The original
+//! GetRight-style web seeding allows standard web servers to serve complete files. The more
+//! sophisticated HTTP/FTP seeding specification (BEP 19) enables servers to serve individual
+//! pieces of files, matching the granular nature of BitTorrent's peer-to-peer transfers. A third
+//! variant, Metalink (BEP 49), provides a way to specify multiple HTTP sources for the same
+//! content.
+//!
+//! HTTP seeders are defined in the torrent metadata using either the "url-list" or "httpseeds"
+//! keys. Unlike regular peers who must maintain complex BitTorrent protocol states and participate
+//! in piece selection and trading algorithms, HTTP seeders simply respond to standard HTTP
+//! requests. This simplicity makes them easier to implement and maintain, though it comes at the
+//! cost of the bandwidth efficiency that makes peer-to-peer networks so powerful.
+
 use std::ops::Deref;
 
 use crate::meta_info::{FileAttr, Files, MetaInfo};
 
 #[derive(Debug, Clone)]
-pub struct HttpSeederList<'a> {
-    http_seeder_list: Vec<(&'a str, HttpSeeder)>,
+pub struct HttpSeedersList {
+    http_seeder_list: Vec<(String, HttpSeeder)>,
 }
 
-impl<'a> HttpSeederList<'a> {
-    pub fn new(http_seeder_list: Vec<(&'a str, HttpSeeder)>) -> Self {
+impl HttpSeedersList {
+    pub fn new(http_seeder_list: Vec<(String, HttpSeeder)>) -> Self {
         Self { http_seeder_list }
     }
 
-    pub fn http_seeder_list(&self) -> &[(&'a str, HttpSeeder)] {
+    pub fn http_seeder_list(&self) -> &[(String, HttpSeeder)] {
         &self.http_seeder_list
     }
 }
 
-impl<'a> Deref for HttpSeederList<'a> {
-    type Target = [(&'a str, HttpSeeder)];
+impl Deref for HttpSeedersList {
+    type Target = [(String, HttpSeeder)];
 
     fn deref(&self) -> &Self::Target {
         self.http_seeder_list()
-    }
-}
-
-// Iterator implementation
-impl<'a> IntoIterator for &'a HttpSeederList<'a> {
-    type Item = &'a (&'a str, HttpSeeder);
-    type IntoIter = std::slice::Iter<'a, (&'a str, HttpSeeder)>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.http_seeder_list.iter()
     }
 }
 

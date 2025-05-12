@@ -118,7 +118,7 @@ where
 }
 
 pub fn run_orst() {
-    let mut random = rand::thread_rng();
+    let mut random = rand::rng();
     let counter = Rc::new(Cell::new(0));
     for &n in &[
         ZERO,
@@ -131,7 +131,7 @@ pub fn run_orst() {
     ] {
         let mut values = Vec::with_capacity(n);
         for _ in 0..n {
-            values.push(SortEvaluator::new(random.gen::<i32>(), counter.clone()));
+            values.push(SortEvaluator::new(random.random::<i32>(), counter.clone()));
         }
 
         println!(

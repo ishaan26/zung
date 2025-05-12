@@ -9,15 +9,19 @@ use zung_parsers::bencode;
 use std::{
     fmt::Display,
     path::Path,
-    sync::{Arc, OnceLock},
+    sync::{Arc, LazyLock, OnceLock},
     thread,
 };
 
 use crate::{
+    download::{Download, DownloadSources},
+    http_seeders::HttpSeedersList,
     meta_info::{FileTree, InfoHash, SortOrd},
-    sources::{DownloadSources, HttpSeederList, TrackerList},
+    trackers::Tracker,
     MetaInfo,
 };
+
+pub static PEER_ID: LazyLock<PeerID> = LazyLock::new(PeerID::new);
 
 /// A torrent client providing the methods to interact with a torrent file.
 #[derive(Debug)]
@@ -27,6 +31,7 @@ pub struct Client {
     info_hash: InfoHash,
     peer_id: PeerID,
     num_files: OnceLock<usize>, // Cache no. of files.
+    download: Download,
 }
 
 /// Main functions
@@ -61,37 +66,48 @@ impl Client {
         if let Some(file_name) = file.as_ref().file_name() {
             let file_name = file_name.to_string_lossy().to_string();
 
-            let file = std::fs::read(file).expect("Unable to read the provided file");
+            let file = Arc::new(std::fs::read(file).expect("Unable to read the provided file"));
 
-            let value = bencode::parse(&file)?;
-
+            let file_clone = Arc::clone(&file);
             let meta_info = thread::spawn(move || {
-                MetaInfo::from_bytes(&file).expect("Invalid torrent file provided")
+                MetaInfo::from_bytes(file_clone.as_ref()).expect("Invalid torrent file provided")
             });
 
-            let info = thread::spawn(move || {
+            let info = thread::spawn(move || -> Result<InfoHash> {
+                let value = bencode::parse(file.as_ref())?;
+
                 let info = value
                     .get_from_dictionary("info")
                     .expect("Invalid Torrent File - No info dictionary provided");
 
                 let info = bencode::to_bytes(info).expect("Failed to calculate the info hash");
 
-                InfoHash::new(&info)
+                Ok(InfoHash::new(&info))
             });
 
-            let meta_info = Arc::new(
-                meta_info
-                    .join()
-                    .expect("Unable to deserialize the torrent file"),
-            );
-            let info_hash = info.join().expect("Unable to calculate infohash");
+            let meta_info = meta_info
+                .join()
+                .expect("Unable to deserialize the torrent file");
+
+            let meta_info = Arc::new(meta_info);
+
+            let info_hash = info.join().expect("Unable to calculate infohash")?;
+            let info_hash_encoded = info_hash.as_encoded();
+
+            let sources = Arc::new(DownloadSources::new(&meta_info));
+
+            let left = meta_info.info().torrent_size();
+
+            // TODO: Update this after reading a partially downloaded torrent file.
+            let downloaded = 0;
 
             Ok(Client {
-                meta_info,
+                meta_info: Arc::clone(&meta_info),
                 file_name,
                 info_hash,
-                peer_id: PeerID::new(),
+                peer_id: *PEER_ID,
                 num_files: OnceLock::new(),
+                download: Download::new(sources, info_hash_encoded, left, downloaded),
             })
         } else {
             bail!("File not found")
@@ -211,8 +227,25 @@ impl Client {
     /// [`MetaInfo`] type.
     ///
     /// See the type documentation for more information on the usage.
-    pub fn sources(&self) -> DownloadSources {
-        DownloadSources::new(self.meta_info())
+    pub fn sources(&self) -> &DownloadSources {
+        self.download.sources()
+    }
+
+    /// Downloads the files from the torrent.
+    pub async fn download_from_trackers(&self) -> anyhow::Result<()> {
+        let downloader = self.download.new_downloader();
+        let tracker_downloader = downloader.tracker_download().await?;
+
+        println!("Trackers      -> {}", self.sources().number_of_trackers());
+        println!("Announced     -> {}", tracker_downloader.announced_count());
+        println!(
+            "Peers         -> {}",
+            tracker_downloader.unique_peers_count()
+        );
+        println!("Handshaken    -> {}", tracker_downloader.handshaken_count());
+        println!("Downloaded    -> {}", tracker_downloader.downloaded_count());
+
+        Ok(())
     }
 }
 
@@ -253,11 +286,12 @@ impl Client {
             let size = (npieces * plen) as f64;
 
             println!(
-                "\n{} Number of pieces: {} each {} in size. Total torrent size: {}",
+                "\n{} Number of pieces: {} each {} in size. Total torrent size: {}, Actual file size: {}",
                 "==>".green().bold(),
                 npieces.to_string().bold().cyan(),
                 human_bytes(plen as f64).bold().cyan(),
-                human_bytes(size).bold().cyan()
+                human_bytes(size).bold().cyan(),
+                human_bytes(meta_info.info().torrent_size() as f64).bold().cyan()
             );
         }));
 
@@ -356,7 +390,7 @@ impl Client {
     /// Prints the download sources generated from the [`MetaInfo`] file to stdout.
     pub fn print_download_sources(&self) {
         #[inline]
-        fn print_trackers(tracker_list: TrackerList) {
+        fn print_trackers(tracker_list: &[Tracker]) {
             print_header("Trackers");
             for (mut i, tracker) in tracker_list.iter().enumerate() {
                 i += 1;
@@ -365,7 +399,7 @@ impl Client {
         }
 
         #[inline]
-        fn print_http_seeders(http_seeder_list: HttpSeederList<'_>) {
+        fn print_http_seeders(http_seeder_list: &HttpSeedersList) {
             print_header("HTTP Seeders");
             for (mut i, http) in http_seeder_list.iter().enumerate() {
                 i += 1;
@@ -377,18 +411,18 @@ impl Client {
             }
         }
 
-        match self.sources() {
-            DownloadSources::Trackers { tracker_list } => {
-                print_trackers(tracker_list);
+        match &self.sources() {
+            crate::download::DownloadSources::Trackers { tracker_list } => {
+                print_trackers(tracker_list.as_slice());
             }
-            DownloadSources::HttpSeeders { http_seeder_list } => {
+            crate::download::DownloadSources::HttpSeeders { http_seeder_list } => {
                 print_http_seeders(http_seeder_list);
             }
-            DownloadSources::Hybrid {
+            crate::download::DownloadSources::Hybrid {
                 tracker_list,
                 http_seeder_list,
             } => {
-                print_trackers(tracker_list);
+                print_trackers(tracker_list.as_slice());
                 print_http_seeders(http_seeder_list);
             }
         }

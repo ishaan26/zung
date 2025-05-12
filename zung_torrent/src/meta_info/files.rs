@@ -15,7 +15,7 @@ const HIDDEN_ATTR: &str = "h";
 ///
 /// - `SingleFile`: Represents a single file with its length in bytes and an optional MD5 checksum.
 /// - `MultiFile`: Represents multiple files with a vector of data containing information about the
-///     file.
+///   file.
 ///
 /// As per the [The BitTorrent Protocol
 /// Specification](https://www.bittorrent.org/beps/bep_0003.html), in a torrent files there is
@@ -86,7 +86,7 @@ pub enum FileAttr {
     ///
     /// While clients implementing this extensions will have no use for the path of a padding file
     /// it should be included for backwards compatibility since it is a mandatory field in BEP 3
-    /// [1]. The recommended path is [".pad", "N"] where N is the length of the padding file in
+    /// . The recommended path is [".pad", "N"] where N is the length of the padding file in
     /// base10. This way clients not aware of this extension will write the padding files into a
     /// single directory, potentially re-using padding files from other torrents also stored in
     /// that directory.
@@ -94,7 +94,7 @@ pub enum FileAttr {
     /// To eventually allow the path field to be omitted clients implementing this BEP should not
     /// require it to be present on padding files.
     ///
-    /// Piece-aligned files simplify deduplication [2] and the operations on mutable torrents [3].
+    /// Piece-aligned files simplify deduplication and the operations on mutable torrents.
     ///
     /// The presence of padding files does not imply that all files are piece-aligned.
     Padding,
@@ -108,7 +108,7 @@ pub enum FileAttr {
     /// on symlink files when parsing it so it can be omitted at some point in the future.
     ///
     /// Just like the regular path the symlink path is relative to the torrent root and must not
-    /// contain .. elements. It should also target another file within the torrent, otherwise a
+    /// contain `..` elements. It should also target another file within the torrent, otherwise a
     /// dangling symlink will be created.
     Symlink,
 
@@ -178,7 +178,7 @@ pub enum SortOrd {
     Desending,
 }
 
-impl<'a> FileTree<'a> {
+impl FileTree<'_> {
     pub fn sort_by_name(&mut self, ord: SortOrd) {
         match ord {
             SortOrd::Ascending => self.node.sort_by_name_ascending(),

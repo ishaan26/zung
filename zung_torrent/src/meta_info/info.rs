@@ -4,11 +4,14 @@ use std::{
     ops::Deref,
 };
 
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
+
+use crate::URL_ENCODE_TABLE;
 
 use super::{
     files::{FileAttr, FileNode, FileTree, Files},
-    pieces::Pieces,
+    pieces::PiecesList,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -52,7 +55,7 @@ pub struct Info {
 
     /// string consisting of the concatenation of all 20-byte SHA1 hash values, one per piece (byte
     /// string, i.e. not urlencoded)
-    pub(crate) pieces: Pieces,
+    pub(crate) pieces: PiecesList,
 
     // (optional) this field is an integer. If it is set to "1", the client MUST publish its
     // presence to get other peers ONLY via the trackers explicitly described in the metainfo file.
@@ -77,10 +80,10 @@ pub struct Info {
 impl<'a> Info {
     /// Total size of the torrent in bytes;
     pub(crate) fn torrent_size(&self) -> usize {
-        let n_pieces = self.pieces.len();
-        let plen = self.piece_length;
-        // Number of pieces * piece_length of each piece gives us the total size of the torrent.
-        n_pieces * plen
+        match &self.files {
+            Files::SingleFile { length, .. } => *length,
+            Files::MultiFile { files } => files.par_iter().map(|f| f.length).sum(),
+        }
     }
 
     /// Builds the file tree of the torrent file.
@@ -157,12 +160,13 @@ impl InfoHash {
     #[inline]
     pub fn to_url_encoded(&self) -> String {
         let bytes = self.as_bytes();
-        let mut buff = String::with_capacity(60);
+        let mut buffer = Vec::with_capacity(3 * bytes.len());
         for byte in bytes {
-            buff.push('%');
-            buff.push_str(&hex::encode([byte]));
+            buffer.extend_from_slice(&URL_ENCODE_TABLE[byte as usize]);
         }
-        buff
+
+        // SAFETY: All bytes are ASCII characters in the ENCODE_TABLE
+        unsafe { String::from_utf8_unchecked(buffer) }
     }
 }
 
@@ -186,13 +190,18 @@ pub struct InfoHashEncoded([u8; 20]);
 
 impl InfoHashEncoded {
     pub fn to_url_encoded(&self) -> String {
-        let bytes = **self;
-        let mut buff = String::with_capacity(60);
+        let bytes = self.as_bytes();
+        let mut buffer = Vec::with_capacity(3 * bytes.len());
         for byte in bytes {
-            buff.push('%');
-            buff.push_str(&hex::encode([byte]));
+            buffer.extend_from_slice(&URL_ENCODE_TABLE[byte as usize]);
         }
-        buff
+
+        // SAFETY: All bytes are ASCII characters in the ENCODE_TABLE
+        unsafe { String::from_utf8_unchecked(buffer) }
+    }
+
+    pub const fn as_bytes(&self) -> [u8; 20] {
+        self.0
     }
 }
 
@@ -208,13 +217,13 @@ impl Deref for InfoHashEncoded {
 mod tests {
     use super::*;
     use crate::meta_info::files::{Files, MultiFiles};
-    use crate::meta_info::pieces::Pieces;
+    use crate::meta_info::pieces::PiecesList;
 
     #[test]
     fn test_torrent_size() {
         // Setup: Creating an instance of `Info` with mocked piece length and pieces.
         let piece_length = 1024; // each piece is 1024 bytes
-        let pieces = Pieces::__test_build();
+        let pieces = PiecesList::__test_build();
 
         let info = Info {
             piece_length,
@@ -228,8 +237,7 @@ mod tests {
             name: "test_file.txt".to_string(),
         };
 
-        // We expect 4 pieces, each of size 1024 bytes
-        assert_eq!(info.torrent_size(), 3 * 1024);
+        assert_eq!(info.torrent_size(), 4096);
     }
 
     #[test]
@@ -237,7 +245,7 @@ mod tests {
         // Setup: Creating a single-file torrent info
         let info = Info {
             piece_length: 1024,
-            pieces: Pieces::__test_build(),
+            pieces: PiecesList::__test_build(),
             private: None,
             files: Files::SingleFile {
                 length: 4096,
@@ -279,7 +287,7 @@ mod tests {
 
         let info = Info {
             piece_length: 1024,
-            pieces: Pieces::__test_build(), // Mocked 4 pieces
+            pieces: PiecesList::__test_build(), // Mocked 4 pieces
             private: None,
             files: Files::MultiFile { files },
             name: "root_folder".to_string(),

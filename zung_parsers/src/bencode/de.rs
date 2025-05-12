@@ -113,7 +113,7 @@ where
     Ok(t)
 }
 
-impl<'de> Deserializer<'de> {
+impl Deserializer<'_> {
     // Look at the first character in the input without consuming it.
     fn peek_byte(&mut self) -> Result<u8> {
         if self.bencode.input.is_empty() {
@@ -132,7 +132,7 @@ impl<'de> Deserializer<'de> {
     }
 }
 
-impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
+impl<'de> de::Deserializer<'de> for &mut Deserializer<'de> {
     type Error = Error;
 
     // Look at the input data to decide what Serde data model type to
@@ -439,7 +439,7 @@ impl<'a, 'de> BencodeAccess<'a, 'de> {
 
 // `SeqAccess` is provided to the `Visitor` to give it the ability to iterate
 // through elements of the sequence.
-impl<'de, 'a> SeqAccess<'de> for BencodeAccess<'a, 'de> {
+impl<'de> SeqAccess<'de> for BencodeAccess<'_, 'de> {
     type Error = Error;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
@@ -456,7 +456,7 @@ impl<'de, 'a> SeqAccess<'de> for BencodeAccess<'a, 'de> {
 
 // `MapAccess` is provided to the `Visitor` to give it the ability to iterate
 // through entries of the map.
-impl<'de, 'a> MapAccess<'de> for BencodeAccess<'a, 'de> {
+impl<'de> MapAccess<'de> for BencodeAccess<'_, 'de> {
     type Error = Error;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>>
@@ -483,7 +483,7 @@ impl<'de, 'a> MapAccess<'de> for BencodeAccess<'a, 'de> {
 //
 // Note that all enum deserialization methods in Serde refer exclusively to the
 // "externally tagged" enum representation.
-impl<'de, 'a> EnumAccess<'de> for BencodeAccess<'a, 'de> {
+impl<'de> EnumAccess<'de> for BencodeAccess<'_, 'de> {
     type Error = Error;
     type Variant = Self;
 
@@ -497,7 +497,7 @@ impl<'de, 'a> EnumAccess<'de> for BencodeAccess<'a, 'de> {
 
 // `VariantAccess` is provided to the `Visitor` to give it the ability to see
 // the content of the single variant that it decided to deserialize.
-impl<'de, 'a> VariantAccess<'de> for BencodeAccess<'a, 'de> {
+impl<'de> VariantAccess<'de> for BencodeAccess<'_, 'de> {
     type Error = Error;
 
     // If the `Visitor` expected this variant to be a unit variant, the input

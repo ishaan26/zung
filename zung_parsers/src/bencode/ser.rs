@@ -397,7 +397,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 //
 // This impl is SerializeSeq so these methods are called after `serialize_seq`
 // is called on the Serializer.
-impl<'a> ser::SerializeSeq for &'a mut Serializer {
+impl ser::SerializeSeq for &mut Serializer {
     // Must match the `Ok` type of the serializer.
     type Ok = ();
     // Must match the `Error` type of the serializer.
@@ -418,7 +418,7 @@ impl<'a> ser::SerializeSeq for &'a mut Serializer {
     }
 }
 
-impl<'a> ser::SerializeTuple for &'a mut Serializer {
+impl ser::SerializeTuple for &mut Serializer {
     type Ok = ();
     type Error = Error;
     fn serialize_element<T: ?Sized + ser::Serialize>(&mut self, value: &T) -> Result<()> {
@@ -430,7 +430,7 @@ impl<'a> ser::SerializeTuple for &'a mut Serializer {
 }
 
 // Same thing but for tuple structs.
-impl<'a> ser::SerializeTupleStruct for &'a mut Serializer {
+impl ser::SerializeTupleStruct for &mut Serializer {
     type Ok = ();
     type Error = Error;
 
@@ -446,7 +446,7 @@ impl<'a> ser::SerializeTupleStruct for &'a mut Serializer {
     }
 }
 
-impl<'a> ser::SerializeTupleVariant for &'a mut Serializer {
+impl ser::SerializeTupleVariant for &mut Serializer {
     type Ok = ();
     type Error = Error;
 
@@ -470,7 +470,7 @@ impl<'a> ser::SerializeTupleVariant for &'a mut Serializer {
 // `serialize_entry` method allows serializers to optimize for the case where
 // key and value are both available simultaneously. In JSON it doesn't make a
 // difference so the default behavior for `serialize_entry` is fine.
-impl<'a> ser::SerializeMap for &'a mut Serializer {
+impl ser::SerializeMap for &mut Serializer {
     type Ok = ();
     type Error = Error;
 
@@ -511,8 +511,8 @@ pub struct SerializeMap<'a> {
     cur_key: Option<Vec<u8>>,
 }
 
-impl<'a> SerializeMap<'a> {
-    pub fn new(ser: &'a mut Serializer, len: usize) -> SerializeMap<'_> {
+impl SerializeMap<'_> {
+    pub fn new(ser: &mut Serializer, len: usize) -> SerializeMap {
         SerializeMap {
             ser,
             entries: Vec::with_capacity(len),
@@ -538,7 +538,7 @@ impl<'a> SerializeMap<'a> {
     }
 }
 
-impl<'a> ser::SerializeMap for SerializeMap<'a> {
+impl ser::SerializeMap for SerializeMap<'_> {
     type Ok = ();
     type Error = Error;
 
@@ -593,7 +593,7 @@ impl<'a> ser::SerializeMap for SerializeMap<'a> {
     }
 }
 
-impl<'a> ser::SerializeStruct for SerializeMap<'a> {
+impl ser::SerializeStruct for SerializeMap<'_> {
     type Ok = ();
     type Error = Error;
     fn serialize_field<T: ?Sized + ser::Serialize>(
@@ -608,7 +608,7 @@ impl<'a> ser::SerializeStruct for SerializeMap<'a> {
     }
 }
 
-impl<'a> ser::SerializeStructVariant for SerializeMap<'a> {
+impl ser::SerializeStructVariant for SerializeMap<'_> {
     type Ok = ();
     type Error = Error;
     fn serialize_field<T: ?Sized + ser::Serialize>(
@@ -647,7 +647,7 @@ mod string {
 
     pub(crate) struct Serializer;
 
-    impl<'a> ser::Serializer for &'a mut Serializer {
+    impl ser::Serializer for &mut Serializer {
         type Ok = Vec<u8>;
         type Error = Error;
         type SerializeSeq = ser::Impossible<Vec<u8>, Error>;
